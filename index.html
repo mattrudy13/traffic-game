@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Green Wave</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=0.7">
+</head>
+<body class="mode-chill">
+<main class="game">
+  <div class="map" id="map">
+    <canvas id="board" aria-label="Traffic map. Click an intersection to flip its light."></canvas>
+
+    <div class="legend" aria-hidden="true">
+      <span class="legend-title">Car color = time waiting</span>
+      <span class="legend-row">
+        <span class="swatch moving"></span>moving
+        <span class="swatch waiting"></span>waiting
+        <span class="swatch fed-up"></span>fed up
+      </span>
+    </div>
+
+    <div class="toast" id="toast" hidden>New road open</div>
+
+    <div class="overlay" id="overlay" hidden>
+      <div class="card" role="dialog" aria-labelledby="cardTitle">
+        <h2 id="cardTitle">Green Wave</h2>
+        <p id="cardText">Cars drive straight through. Click an intersection to switch which way is green.
+          Don't let a queue back up off the edge of the map. New roads open as you go.</p>
+        <dl class="card-stats" id="cardStats" hidden>
+          <div><dt>Cars through</dt><dd id="finalScore">0</dd></div>
+          <div><dt>Time</dt><dd id="finalTime">0:00</dd></div>
+          <div><dt>Best</dt><dd id="bestScore">0</dd></div>
+        </dl>
+        <button class="primary" id="cardButton">Start</button>
+        <p class="keys" id="cardKeys">Space pauses</p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="strip">
+    <div class="strip-row">
+      <div class="brand">
+        <h1>Green Wave</h1>
+        <p id="hint">Lights run themselves. Click one to take over.</p>
+      </div>
+      <div class="divider" aria-hidden="true"></div>
+
+      <div class="stat chill-only">
+        <span class="label">Time of day</span>
+        <span class="value-row"><span class="value small" id="dayClock">6:30 AM</span><span class="sub" id="dayPhase">early morning</span></span>
+        <div class="day-bar" aria-hidden="true">
+          <span class="rush" style="left: 29%; width: 10%"></span>
+          <span class="rush" style="left: 67%; width: 12%"></span>
+          <span class="now" id="dayMarker"></span>
+        </div>
+      </div>
+      <div class="stat">
+        <span class="label">Cars through</span>
+        <span class="value" id="score">0</span>
+      </div>
+      <div class="stat chill-only wait-stat">
+        <div class="stat">
+          <span class="label">Avg wait</span>
+          <span class="value" id="avgWait">–</span>
+        </div>
+        <svg class="sparkline" id="waitChart" width="140" height="36" viewBox="0 0 140 36" role="img" aria-label="Average wait over the last few minutes">
+          <polyline id="waitLine" points=""></polyline>
+        </svg>
+      </div>
+
+      <!-- Challenge mode stats -->
+      <div class="stat challenge-only">
+        <span class="label">Time</span>
+        <span class="value" id="clock">0:00</span>
+      </div>
+      <div class="stat challenge-only">
+        <span class="label">Lights</span>
+        <span class="value-row"><span class="value" id="lights">1</span><span class="sub" id="nextRoad"></span></span>
+      </div>
+      <div class="stat challenge-only" id="queueStat">
+        <span class="label">Longest queue</span>
+        <span class="value-row"><span class="value" id="queue">0/6</span><span class="sub" id="queueEdge"></span></span>
+      </div>
+
+      <div class="spacer"></div>
+      <button class="secondary" id="modeButton">Try challenge</button>
+      <button class="pause" id="pauseButton" aria-label="Pause">
+        <svg class="icon-pause" aria-hidden="true" width="16" height="18" viewBox="0 0 16 18"><rect x="1" y="1" width="5" height="16" rx="1"></rect><rect x="10" y="1" width="5" height="16" rx="1"></rect></svg>
+        <svg class="icon-play" aria-hidden="true" width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z"></path></svg>
+      </button>
+    </div>
+
+    <!-- Chill mode controls -->
+    <div class="strip-row controls chill-only">
+      <div class="control">
+        <span class="label" id="layoutLabel">Lights</span>
+        <div class="segmented" role="group" aria-labelledby="layoutLabel" id="layoutButtons">
+          <button data-value="1" aria-pressed="false">1</button>
+          <button data-value="2" aria-pressed="false">2</button>
+          <button data-value="4" aria-pressed="true">4</button>
+          <button data-value="6" aria-pressed="false">6</button>
+        </div>
+      </div>
+      <div class="control">
+        <span class="label" id="strategyLabel">Lights run on</span>
+        <div class="segmented" role="group" aria-labelledby="strategyLabel" id="strategyButtons">
+          <button data-value="smart" aria-pressed="true">Smart</button>
+          <button data-value="timer" aria-pressed="false">Timer</button>
+          <button data-value="wave" aria-pressed="false">Green wave</button>
+        </div>
+      </div>
+      <div class="control">
+        <span class="label" id="arrowsLabel">Left arrows</span>
+        <div class="segmented" role="group" aria-labelledby="arrowsLabel" id="arrowButtons">
+          <button data-value="on" aria-pressed="true">On</button>
+          <button data-value="off" aria-pressed="false">Off</button>
+        </div>
+      </div>
+      <div class="control">
+        <span class="label" id="speedLabel">Speed</span>
+        <div class="segmented" role="group" aria-labelledby="speedLabel" id="speedButtons">
+          <button data-value="1" aria-pressed="true">1×</button>
+          <button data-value="2" aria-pressed="false">2×</button>
+          <button data-value="4" aria-pressed="false">4×</button>
+        </div>
+      </div>
+      <div class="control">
+        <label class="label" for="traffic">City traffic</label>
+        <input type="range" id="traffic" min="0" max="100" value="45">
+        <span class="sub" id="trafficName">normal</span>
+      </div>
+      <p class="strategy-note" id="strategyNote"></p>
+    </div>
+  </footer>
+</main>
+<script src="sim.js?v=0.7"></script>
+<script src="game.js?v=0.7"></script>
+</body>
+</html>
