@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=0.7">
+<link rel="stylesheet" href="style.css?v=0.8.4">
 </head>
 <body class="mode-chill">
 <main class="game">
@@ -92,10 +92,16 @@
         <svg class="icon-pause" aria-hidden="true" width="16" height="18" viewBox="0 0 16 18"><rect x="1" y="1" width="5" height="16" rx="1"></rect><rect x="10" y="1" width="5" height="16" rx="1"></rect></svg>
         <svg class="icon-play" aria-hidden="true" width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z"></path></svg>
       </button>
+      <!-- Phones only: the controls live in a pull-up sheet -->
+      <button class="secondary phone-only chill-only controls-open" id="controlsOpen" aria-controls="controlsSheet" aria-expanded="false">Controls</button>
     </div>
 
-    <!-- Chill mode controls -->
-    <div class="strip-row controls chill-only">
+    <!-- Chill mode controls (a pull-up sheet on phones) -->
+    <div class="strip-row controls chill-only" id="controlsSheet">
+      <div class="sheet-head phone-only">
+        <span>Controls</span>
+        <button class="sheet-close" id="controlsClose" aria-label="Close controls">×</button>
+      </div>
       <div class="control">
         <span class="label" id="layoutLabel">Lights</span>
         <div class="segmented" role="group" aria-labelledby="layoutLabel" id="layoutButtons">
@@ -134,10 +140,12 @@
         <span class="sub" id="trafficName">normal</span>
       </div>
       <p class="strategy-note" id="strategyNote"></p>
+      <button class="secondary phone-only" id="sheetChallenge">Try challenge</button>
     </div>
   </footer>
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 </main>
-<script src="sim.js?v=0.7"></script>
-<script src="game.js?v=0.7"></script>
+<script src="sim.js?v=0.8.4"></script>
+<script src="game.js?v=0.8.4"></script>
 </body>
 </html>

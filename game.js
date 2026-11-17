@@ -61,6 +61,8 @@
     avgWait: $('avgWait'), waitLine: $('waitLine'), strategyNote: $('strategyNote'),
     layoutButtons: $('layoutButtons'), strategyButtons: $('strategyButtons'), speedButtons: $('speedButtons'),
     arrowButtons: $('arrowButtons'),
+    controlsOpen: $('controlsOpen'), controlsClose: $('controlsClose'), backdrop: $('sheetBackdrop'),
+    sheetChallenge: $('sheetChallenge'),
     traffic: $('traffic'), trafficName: $('trafficName')
   };
 
@@ -77,16 +79,35 @@
 
   // ------------------------------------------------------------------ sizing
 
+  // Small screens (phones either way up) get the slim bar and the pull-up controls sheet.
+  // Held upright, the city is also turned a quarter turn so its long side runs down the screen.
+  var phoneQuery = window.matchMedia('(max-width: 600px), (max-height: 500px)');
+  var uprightQuery = window.matchMedia('(orientation: portrait)');
+  var rotated = false;
+
+  function applyPhone() {
+    document.body.classList.toggle('phone', phoneQuery.matches);
+    if (!phoneQuery.matches) closeSheet();
+    resize();
+  }
+
   // The world is a fixed 1280 x 680; scale it to fit the map area and keep it sharp on retina screens.
   function resize() {
     var box = mapEl.getBoundingClientRect();
-    scale = Math.min(box.width / W, box.height / H);
     var dpr = window.devicePixelRatio || 1;
-    canvas.style.width = Math.floor(W * scale) + 'px';
-    canvas.style.height = Math.floor(H * scale) + 'px';
-    canvas.width = Math.floor(W * scale * dpr);
-    canvas.height = Math.floor(H * scale * dpr);
-    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    rotated = phoneQuery.matches && uprightQuery.matches;
+    // On screen the world is W x H, or H x W when turned.
+    var sw = rotated ? H : W, sh = rotated ? W : H;
+    scale = Math.min(box.width / sw, box.height / sh);
+    canvas.style.width = Math.floor(sw * scale) + 'px';
+    canvas.style.height = Math.floor(sh * scale) + 'px';
+    canvas.width = Math.floor(sw * scale * dpr);
+    canvas.height = Math.floor(sh * scale * dpr);
+    var k = scale * dpr;
+    // Turned: world x runs down the screen and world y runs right-to-left
+    // (screenX = H·k − y·k, screenY = x·k).
+    if (rotated) ctx.setTransform(0, k, -k, 0, H * k, 0);
+    else ctx.setTransform(k, 0, 0, k, 0, 0);
   }
 
   // ------------------------------------------------------------------ colors
@@ -548,9 +569,27 @@
     ui.pause.setAttribute('aria-label', paused ? 'Resume' : 'Pause');
   }
 
+  function setModeClass(name) {
+    document.body.classList.remove('mode-chill', 'mode-challenge');
+    document.body.classList.add(name);
+  }
+
+  // Phones: the chill controls slide up as a sheet over the map. The city keeps running.
+  function openSheet() {
+    document.body.classList.add('sheet-open');
+    ui.backdrop.hidden = false;
+    ui.controlsOpen.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeSheet() {
+    document.body.classList.remove('sheet-open');
+    ui.backdrop.hidden = true;
+    ui.controlsOpen.setAttribute('aria-expanded', 'false');
+  }
+
   function enterChill() {
     kind = 'chill';
-    document.body.className = 'mode-chill';
+    setModeClass('mode-chill');
     ui.hint.textContent = 'Lights run themselves. Click one to take over.';
     ui.modeButton.textContent = 'Try challenge';
     game = newChillGame();
@@ -562,7 +601,8 @@
 
   function enterChallenge() {
     kind = 'challenge';
-    document.body.className = 'mode-challenge';
+    setModeClass('mode-challenge');
+    closeSheet();
     ui.hint.textContent = 'Click a light to flip it';
     ui.modeButton.textContent = 'Back to chill';
     game = Sim.createGame();
@@ -625,7 +665,9 @@
 
   function worldPoint(e) {
     var box = canvas.getBoundingClientRect();
-    return { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
+    var sx = (e.clientX - box.left) / scale, sy = (e.clientY - box.top) / scale;
+    // Undo the quarter turn used on phones.
+    return rotated ? { x: sy, y: H - sx } : { x: sx, y: sy };
   }
 
   canvas.addEventListener('pointerdown', function (e) {
@@ -710,8 +752,18 @@
     if (document.hidden) pause();
   });
 
+  ui.controlsOpen.addEventListener('click', openSheet);
+  ui.controlsClose.addEventListener('click', closeSheet);
+  ui.backdrop.addEventListener('click', closeSheet);
+  ui.sheetChallenge.addEventListener('click', enterChallenge);
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeSheet();
+  });
+
   window.addEventListener('resize', resize);
+  phoneQuery.addEventListener('change', applyPhone);
+  uprightQuery.addEventListener('change', applyPhone);
   syncChillControls();
-  resize();
+  applyPhone();
   requestAnimationFrame(frame);
 })();

@@ -15,7 +15,12 @@ more cars waiting.
 
 ## Play
 
-Open `index.html` in a browser. There's no build step and nothing to install.
+Live at https://mattrudy13.github.io/traffic-game/ , or open `index.html` in a browser. There's no
+build step and nothing to install.
+
+On a phone held upright the whole city is drawn a quarter turn, so it fills the screen; a slim
+bar shows the time, cars, average wait and pause, and **Controls** opens a pull-up sheet with the
+rest. Turned sideways, the map stays the normal way round with the same slim bar.
 
 ## Files
 
