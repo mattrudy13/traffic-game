@@ -90,6 +90,23 @@
     [17.5, 1.7], [19, 0.9], [21, 0.5], [23, 0.25], [24, 0.2]
   ];
 
+  // Traffic kinds (chill and compare modes). Each changes the shape of the day.
+  //  normal:       DAY_TRAFFIC, busier and quieter lanes picked at random.
+  //  commute:      the same day, but mornings most avenue traffic heads east ("into town") and
+  //                evenings it heads back west. COMMUTE_BIAS is +1 at the morning peak, -1 at the evening one.
+  //  stadium:      a quieter day, then a night game lets out and a crowd floods in from the north-east
+  //                corner: southbound on the east-most street and westbound on the top avenue.
+  //  sunday:       no rush hours, light all day, and more people turning.
+  //  construction: the lower avenue's eastbound curb lane is closed past its first light.
+  var KINDS = ['normal', 'commute', 'stadium', 'sunday', 'construction'];
+  var SUNDAY_TRAFFIC = [[0, 0.2], [6, 0.25], [10, 0.75], [17, 0.75], [21, 0.45], [24, 0.2]];
+  var COMMUTE_BIAS = [[0, 0], [6, 0], [8, 1], [10, 0.6], [12, 0], [15, 0], [17.5, -1], [19.5, -0.4], [21, 0], [24, 0]];
+  var COMMUTE_STRENGTH = 0.9;      // morning eastbound lanes get e^0.9 ≈ 2.5x, westbound e^-0.9 ≈ 0.4x
+  var STADIUM_DAY = 0.85;          // the rest of a stadium day is a bit quieter than normal
+  var STADIUM_BURST = [[0, 0], [21.25, 0], [21.5, 1], [22.5, 1], [23.25, 0], [24, 0]];
+  var STADIUM_BOOST = 3;           // extra arrivals per crowd lane at the peak, as a multiple of the traffic slider
+  var SUNDAY_TURNS = { turnLeft: 0.22, turnRight: 0.28 };
+
   // Road layouts for chill mode, keyed by the number of lights they make. The east-west roads
   // are avenues.
   var LAYOUTS = {
@@ -147,6 +164,7 @@
       chill: false,        // chill mode: no losing, lights run themselves
       traffic: null,       // chill mode: base arrival rate per lane (cars/s) instead of the ramp
       strategy: 'smart',   // chill mode: smart | timer | wave
+      kind: 'normal',      // traffic kind (see KINDS)
       autoTimer: 0,
       exits: [],           // {t, wait} for cars that recently left the map
       tally: { count: 0, sum: 0, worst: 0 }   // every trip since resetTally (compare mode's "today")
@@ -165,13 +183,46 @@
   // A relaxed game: all roads for the chosen layout are open from the start.
   function createChill(lights, traffic, options) {
     var layout = LAYOUTS[lights] || LAYOUTS[4];
-    var g = createGame(Object.assign({}, options, {
+    var kind = options && KINDS.indexOf(options.kind) >= 0 ? options.kind : 'normal';
+    var g = createGame(Object.assign({}, kind === 'sunday' ? SUNDAY_TURNS : {}, options, {
       roadSchedule: layout.map(function (r) { return { at: 0, axis: r[0], pos: r[1], avenue: r[0] === 'h' }; })
     }));
     g.chill = true;
     g.traffic = traffic;
+    g.kind = kind;
+    if (kind === 'stadium') setUpStadium(g);
+    if (kind === 'construction') setUpConstruction(g);
     setStrategy(g, (options && options.strategy) || 'smart');
     return g;
+  }
+
+  // The crowd comes out of the stadium in the north-east block, onto the two roads beside it.
+  function setUpStadium(g) {
+    var east = maxBy(g.roads.filter(function (r) { return r.axis === 'v'; }), function (r) { return r.c; });
+    var top = maxBy(g.roads.filter(function (r) { return r.axis === 'h'; }), function (r) { return -r.c; });
+    g.lanes.forEach(function (lane) {
+      lane.crowd = (lane.road === east && lane.dir === 'S') || (lane.road === top && lane.dir === 'W');
+    });
+    // The block it stands in, for drawing.
+    g.stadium = { x0: east.c + east.half, y1: top.c - top.half };
+  }
+
+  // Close the lower avenue's eastbound curb lane on the stretch past its first light.
+  // That stretch gets no room at all (hasSpace says no), so straight cars in the curb lane merge
+  // into the inner lane before the light; right turns from it still go. Turns only ever lead onto
+  // streets out of the city, so nobody turns into the closed stretch, and the "don't block the
+  // box" rule keeps working: a car never enters an intersection it can't leave.
+  function setUpConstruction(g) {
+    var low = maxBy(g.roads.filter(function (r) { return r.axis === 'h'; }), function (r) { return r.c; });
+    var lane = g.lanes.filter(function (l) { return l.road === low && l.dir === 'E' && l.position === 'curb'; })[0];
+    if (!lane || !lane.stops.length) return;
+    var stop = lane.stops[0];
+    stop.closed = true;
+    g.construction = { lane: lane, stop: stop, from: stop.boxEnd, to: isFinite(stop.segmentEnd) ? stop.segmentEnd : lane.length };
+  }
+
+  function maxBy(list, f) {
+    return list.reduce(function (best, x) { return best === null || f(x) > f(best) ? x : best; }, null);
   }
 
   function setTraffic(g, rate) {
@@ -206,12 +257,38 @@
     return (g.cfg.dayStartHour + g.time / g.cfg.dayLength * 24) % 24;
   }
 
-  function dayTraffic(hour) {
-    for (var i = 1; i < DAY_TRAFFIC.length; i++) {
-      var a = DAY_TRAFFIC[i - 1], b = DAY_TRAFFIC[i];
+  // Straight lines between [hour, value] points.
+  function curveAt(points, hour) {
+    for (var i = 1; i < points.length; i++) {
+      var a = points[i - 1], b = points[i];
       if (hour <= b[0]) return a[1] + (b[1] - a[1]) * (hour - a[0]) / (b[0] - a[0]);
     }
-    return DAY_TRAFFIC[0][1];
+    return points[0][1];
+  }
+
+  function dayTraffic(hour) {
+    return curveAt(DAY_TRAFFIC, hour);
+  }
+
+  // Is the stadium crowd on its way out (0 = no, 1 = at its peak)?
+  function stadiumCrowd(g) {
+    return g.kind === 'stadium' ? curveAt(STADIUM_BURST, hourOfDay(g)) : 0;
+  }
+
+  // A short note on what the traffic kind is doing right now, for the strip (or null).
+  function kindNote(g) {
+    var hour = hourOfDay(g);
+    if (g.kind === 'stadium') {
+      if (stadiumCrowd(g) > 0) return 'game letting out';
+      if (hour >= 19 && hour < 21.25) return 'game on';
+    }
+    if (g.kind === 'commute') {
+      var b = curveAt(COMMUTE_BIAS, hour);
+      if (b > 0.3) return 'commute into town';
+      if (b < -0.3) return 'commute home';
+    }
+    if (g.kind === 'construction') return 'lane closed';
+    return null;
   }
 
   // 0 = full daylight, 1 = full night, with an hour or two of dusk and dawn in between.
@@ -305,7 +382,8 @@
         rng: seeded(mixSeed(g.seed, g.lanes.length)),
         weight: 1
       };
-      lane.spawnTimer = lane.rng() * 4;
+      // Expected arrivals still to come before the next car (see spawnCars).
+      lane.spawnTimer = lane.rng();
       g.lanes.push(lane);
       added.push(lane);
     });
@@ -516,8 +594,8 @@
     var turn = forced || 'straight';
     if (!forced && g.chill) {
       var cfg = g.cfg;
-      var canLeft = stop.turns.left && stop.turns.left.stop.capacity === Infinity;
-      var canRight = stop.turns.right && stop.turns.right.stop.capacity === Infinity;
+      var canLeft = stop.turns.left && stop.turns.left.stop.capacity === Infinity && !stop.turns.left.stop.closed;
+      var canRight = stop.turns.right && stop.turns.right.stop.capacity === Infinity && !stop.turns.right.stop.closed;
       var leftWeight = canLeft ? cfg.turnLeft : 0, rightWeight = canRight ? cfg.turnRight : 0;
       // Keep the overall share of turning cars the same even when only one turn is allowed here.
       rng = rng || g.rng;
@@ -565,6 +643,7 @@
   // Is there a guaranteed space for one more car after this intersection on `lane`?
   // Cars already past the line on that stretch, and turning cars heading onto it, each hold a space.
   function hasSpace(lane, stop) {
+    if (stop.closed) return false;
     if (stop.capacity === Infinity) return true;
     var taken = stop.light.incoming[lane.id] || 0;
     for (var i = 0; i < lane.cars.length; i++) {
@@ -785,6 +864,12 @@
         if (!lane.sibling || car.shift > 0 || car.s < 2 * car.len) return;
         var plan = car.plan;
         if (!plan || isTurning(car)) return;
+        // The stretch past the next light is closed: a car going straight there has to merge,
+        // even right at the line (it waits there for a gap in the other lane).
+        if (plan.turn === 'straight' && !plan.want && plan.stop.closed) {
+          moves.push({ car: car, from: lane, reason: 'merge' });
+          return;
+        }
         if (car.s > plan.stop.line - cfg.laneChangeStopGap) {
           // Too close to the light to move over: give up the turn and go straight instead.
           if (plan.want) car.plan = { stop: plan.stop, turn: 'straight' };
@@ -796,7 +881,8 @@
           // Stuck behind a slow or stopped car (often a waiting left-turner), with clearly more
           // room in the other lane: pass.
           var here = roomAhead(lane, i, car), there = roomAheadIn(lane.sibling, car.s);
-          if (here < 50 && there > here + 60) reason = 'pass';
+          var ahead = nextStop(lane.sibling, car.s);
+          if (here < 50 && there > here + 60 && !(ahead && ahead.closed)) reason = 'pass';
         }
         if (reason) moves.push({ car: car, from: lane, reason: reason });
       });
@@ -820,14 +906,34 @@
 
   function spawnRate(g) {
     var cfg = g.cfg;
-    if (g.traffic !== null) return g.traffic * dayTraffic(hourOfDay(g));
+    if (g.traffic !== null) {
+      var hour = hourOfDay(g);
+      if (g.kind === 'sunday') return g.traffic * curveAt(SUNDAY_TRAFFIC, hour);
+      if (g.kind === 'stadium') return g.traffic * dayTraffic(hour) * STADIUM_DAY;
+      return g.traffic * dayTraffic(hour);
+    }
     return Math.min(cfg.spawnMax, cfg.spawnBase + cfg.spawnGrowth * g.time);
+  }
+
+  // This lane's arrivals per second: the city-wide rate shaped by the traffic kind.
+  function laneRate(g, lane, rate) {
+    var r = rate * lane.weight;
+    if (g.kind === 'commute' && lane.axis === 'ew') {
+      var bias = curveAt(COMMUTE_BIAS, hourOfDay(g)) * COMMUTE_STRENGTH;
+      r *= Math.exp(lane.dir === 'E' ? bias : -bias);
+    }
+    if (lane.crowd) r += g.traffic * STADIUM_BOOST * stadiumCrowd(g);
+    return r;
   }
 
   function spawnCars(g, dt) {
     var cfg = g.cfg, rate = spawnRate(g);
     g.lanes.forEach(function (lane) {
-      lane.spawnTimer -= dt;
+      // The timer counts down in "expected arrivals", not seconds: it drops by this lane's current
+      // rate times dt. A gap measured in seconds would be fixed at whatever the rate was when it was
+      // drawn, so a late-night gap of ~15 s would hold back the stadium crowd for half its burst.
+      // Counting this way follows the rate as it changes (a varying-rate Poisson process).
+      lane.spawnTimer -= laneRate(g, lane, rate) * dt;
       if (lane.spawnTimer <= 0) {
         lane.arrivals++;
         if (!g.chill || lane.offMap < cfg.chillMaxOffMap) {
@@ -835,7 +941,7 @@
           lane.pending.push(lane.arrivals);
         }
         // Random gaps between arrivals (exponential), so traffic comes in clumps like real traffic.
-        lane.spawnTimer = -Math.log(1 - lane.rng()) / (rate * lane.weight);
+        lane.spawnTimer += -Math.log(1 - lane.rng());
       }
       var last = lane.cars[lane.cars.length - 1];
       var hasRoom = (!last || last.s - last.len >= cfg.minGap) && !(lane.ghosts || []).some(function (gh) {
@@ -1081,6 +1187,8 @@
     dayPhase: dayPhase,
     averageWait: averageWait,
     resetTally: resetTally,
+    KINDS: KINDS,
+    kindNote: kindNote,
     step: step,
     flip: flip,
     lightAt: lightAt,
