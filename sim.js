@@ -107,6 +107,29 @@
   var STADIUM_BOOST = 3;           // extra arrivals per crowd lane at the peak, as a multiple of the traffic slider
   var SUNDAY_TURNS = { turnLeft: 0.22, turnRight: 0.28 };
 
+  // Weather (chill and compare modes). Wet and snowy roads mean lower top speeds, gentler
+  // acceleration and weaker brakes. Weaker brakes alone make moving cars keep bigger gaps (the
+  // safe-speed rule leaves more room). The gap between stopped cars stays the same: the "don't
+  // block the box" spaces are counted from it, so changing it could strand a car in a box.
+  var WEATHER = {
+    clear: { speed: 1, accel: 1, brake: 1 },
+    rain: { speed: 0.85, accel: 0.85, brake: 0.75 },
+    snow: { speed: 0.7, accel: 0.65, brake: 0.55 }
+  };
+  var WEATHER_BLOCK = 4;           // "changing" weather picks anew every 4 game hours
+
+  // Buses run in the avenues' curb lanes, one every BUS_EVERY seconds each way, and stop for
+  // BUS_DWELL seconds at a stop in the middle of each block. A bus is about two cars long, so it
+  // takes two spaces in the "don't block the box" count (it would otherwise fit where it can't).
+  var BUS_EVERY = 40, BUS_DWELL = 4, BUS_LENGTH = 52, BUS_SPEED = 0.85;
+  // Ambulances: one every AMBULANCE_EVERY seconds or so, straight across the city. Lights ahead
+  // turn green for it, and cars ahead move over (or ease to the side on one-lane streets).
+  var AMBULANCE_EVERY = 45, AMBULANCE_LENGTH = 30, AMBULANCE_SPEED = 1.25;
+  var AMBULANCE_REACH = 260;       // a light this far ahead of an ambulance turns green for it
+  var YIELD_REACH = 140;           // cars this close ahead of an ambulance get out of its way
+  // Buses and ambulances never turn: their stream always says "no".
+  function neverTurn() { return 0.999; }
+
   // Road layouts for chill mode, keyed by the number of lights they make. The east-west roads
   // are avenues.
   var LAYOUTS = {
@@ -165,6 +188,10 @@
       traffic: null,       // chill mode: base arrival rate per lane (cars/s) instead of the ramp
       strategy: 'smart',   // chill mode: smart | timer | wave
       kind: 'normal',      // traffic kind (see KINDS)
+      weather: 'clear',    // clear | rain | snow | changing
+      wx: WEATHER.clear,   // this step's weather effect
+      buses: false,
+      ambulances: false,   // send one now and then by itself
       autoTimer: 0,
       exits: [],           // {t, wait} for cars that recently left the map
       tally: { count: 0, sum: 0, worst: 0 }   // every trip since resetTally (compare mode's "today")
@@ -190,8 +217,13 @@
     g.chill = true;
     g.traffic = traffic;
     g.kind = kind;
+    g.weather = options && options.weather && (WEATHER[options.weather] || options.weather === 'changing') ? options.weather : 'clear';
+    g.buses = !!(options && options.buses);
+    g.ambulances = !!(options && options.ambulances);
     if (kind === 'stadium') setUpStadium(g);
     if (kind === 'construction') setUpConstruction(g);
+    setUpBuses(g);          // after construction: no buses in a closed lane
+    setUpAmbulances(g);
     setStrategy(g, (options && options.strategy) || 'smart');
     return g;
   }
@@ -219,6 +251,51 @@
     var stop = lane.stops[0];
     stop.closed = true;
     g.construction = { lane: lane, stop: stop, from: stop.boxEnd, to: isFinite(stop.segmentEnd) ? stop.segmentEnd : lane.length };
+  }
+
+  // Bus lanes and their stops: one stop in the middle of each block that's long enough.
+  function setUpBuses(g) {
+    g.lanes.forEach(function (lane) {
+      if (!lane.road.avenue || lane.position !== 'curb' || lane.stops.some(function (st) { return st.closed; })) return;
+      var edges = [0];
+      lane.stops.forEach(function (st) { edges.push(st.line, st.boxEnd); });
+      edges.push(lane.length);
+      lane.busStops = [];
+      for (var i = 0; i + 1 < edges.length; i += 2) {
+        if (edges[i + 1] - edges[i] > 4 * BUS_LENGTH) lane.busStops.push((edges[i] + edges[i + 1]) / 2 + BUS_LENGTH / 2);
+      }
+      var rng = seeded(mixSeed(g.seed, 0xb05, lane.id));
+      lane.nextBus = rng() * BUS_EVERY;
+      lane.buses = 0;
+    });
+  }
+
+  function setUpAmbulances(g) {
+    g.ambulanceRng = seeded(mixSeed(g.seed, 0xa3b));
+    g.nextAmbulance = AMBULANCE_EVERY * (0.5 + g.ambulanceRng());
+  }
+
+  // Send an ambulance across the city. `pick` (0..1) chooses its road, so compare mode can send
+  // the same one on both maps. It goes in an avenue's inner lane or a side street, never a closed lane.
+  function sendAmbulance(g, pick) {
+    var lanes = g.lanes.filter(function (l) {
+      return l.position !== 'curb' && !l.stops.some(function (st) { return st.closed; });
+    });
+    if (!lanes.length) return null;
+    var lane = lanes[Math.min(lanes.length - 1, Math.floor(pick * lanes.length))];
+    lane.ambulancesWaiting = (lane.ambulancesWaiting || 0) + 1;
+    lane.ambulances = (lane.ambulances || 0) + 1;
+    g.events.push({ type: 'ambulance' });
+    return lane;
+  }
+
+  // The weather right now: the setting, or for "changing", a pick for this 4-hour block of this day.
+  function currentWeather(g) {
+    if (g.weather !== 'changing') return g.weather;
+    var hours = g.cfg.dayStartHour + g.time / g.cfg.dayLength * 24;
+    var block = Math.floor(hours / WEATHER_BLOCK);
+    var r = seeded(mixSeed(g.seed, 0xea7, block))();
+    return r < 0.5 ? 'clear' : r < 0.82 ? 'rain' : 'snow';
   }
 
   function maxBy(list, f) {
@@ -642,15 +719,15 @@
 
   // Is there a guaranteed space for one more car after this intersection on `lane`?
   // Cars already past the line on that stretch, and turning cars heading onto it, each hold a space.
-  function hasSpace(lane, stop) {
+  function hasSpace(lane, stop, need) {
     if (stop.closed) return false;
     if (stop.capacity === Infinity) return true;
     var taken = stop.light.incoming[lane.id] || 0;
     for (var i = 0; i < lane.cars.length; i++) {
       var c = lane.cars[i];
-      if (c.s > stop.line + 0.001 && c.s <= stop.segmentEnd + 0.5) taken++;
+      if (c.s > stop.line + 0.001 && c.s <= stop.segmentEnd + 0.5) taken += c.slots || 1;
     }
-    return taken < stop.capacity;
+    return taken + (need || 1) <= stop.capacity;
   }
 
   // A left turn crosses the oncoming lane, so it needs a gap: nothing oncoming in the box, and
@@ -689,7 +766,7 @@
       // do when oncoming traffic stops. Otherwise only keep going if too close to stop comfortably.
       var waitingLeft = plan.turn === 'left' && car.v < 5 && stop.line - car.s < 2;
       var dist = stop.line - car.s;
-      var stoppingDistance = car.v * car.v / (2 * cfg.brake);
+      var stoppingDistance = car.v * car.v / (2 * cfg.brake * g.wx.brake);
       if (!waitingLeft && (car.v < 20 || dist > stoppingDistance)) return false;
     }
     // Cross traffic that entered before the light changed still has to clear the box.
@@ -702,7 +779,7 @@
     // Don't block the box: only go if this car is guaranteed a space on the lane it ends up in.
     // (Checking only the car ahead wasn't enough: it could stop later and strand this car in the
     // box, and four stranded cars around a block froze the grid for good.)
-    if (plan.turn === 'straight') return hasSpace(lane, stop);
+    if (plan.turn === 'straight') return hasSpace(lane, stop, car.slots);
     return hasSpace(plan.target, plan.targetStop);
   }
 
@@ -736,10 +813,12 @@
       }
       var approaching = plan && car.s <= plan.stop.line + 0.001;
       if (approaching && !mayEnter(g, lane, plan.stop, car)) limit = Math.min(limit, plan.stop.line);
+      if (car.bus) limit = Math.min(limit, busStopLimit(lane, car, dt));
 
-      var maxSpeed = lane.maxSpeed;
+      var wx = g.wx, brake = cfg.brake * wx.brake;
+      var maxSpeed = lane.maxSpeed * wx.speed * (car.bus ? BUS_SPEED : car.ambulance ? AMBULANCE_SPEED : 1);
       if (plan && plan.turn !== 'straight') {
-        var cornerSpeed = plan.turn === 'left' ? cfg.leftTurnSpeed : cfg.rightTurnSpeed;
+        var cornerSpeed = (plan.turn === 'left' ? cfg.leftTurnSpeed : cfg.rightTurnSpeed) * wx.speed;
         var curveEnd = plan.stop.boxStart + plan.arc.len;
         if (car.s > plan.stop.boxStart) {
           maxSpeed = cornerSpeed;
@@ -747,19 +826,19 @@
         } else {
           // Slow down for the corner: the same braking rule, aimed at corner speed at the box.
           var toBox = plan.stop.boxStart - car.s;
-          maxSpeed = Math.min(maxSpeed, Math.sqrt(cornerSpeed * cornerSpeed + 2 * cfg.brake * toBox));
+          maxSpeed = Math.min(maxSpeed, Math.sqrt(cornerSpeed * cornerSpeed + 2 * brake * toBox));
         }
       }
 
       // Safe-speed rule: from speed v a car needs v²/(2·brake) to stop, so the fastest
       // it can go and still stop within `room` is sqrt(2·brake·room).
       var room = Math.max(0, limit - car.s);
-      var target = Math.min(maxSpeed, Math.sqrt(2 * cfg.brake * room));
-      car.v = car.v < target ? Math.min(target, car.v + cfg.accel * dt) : target;
+      var target = Math.min(maxSpeed, Math.sqrt(2 * brake * room));
+      car.v = car.v < target ? Math.min(target, car.v + cfg.accel * wx.accel * dt) : target;
 
       var before = car.s;
       car.s = Math.min(car.s + car.v * dt, Math.max(car.s, limit));
-      if (car.v < 10) {
+      if (car.v < 10 && !car.dwell) {
         car.wait += dt;
         car.totalWait += dt;
       }
@@ -783,12 +862,61 @@
     }
     while (cars.length && cars[0].s - cars[0].len > lane.length) {
       var gone = cars.shift();
+      // Buses and ambulances aren't trips people are timing, so they stay out of the numbers.
+      if (gone.bus || gone.ambulance) continue;
       g.exits.push({ t: g.time, wait: gone.totalWait, id: gone.id });
       g.tally.count++;
       g.tally.sum += gone.totalWait;
       g.tally.worst = Math.max(g.tally.worst, gone.totalWait);
       g.score++;
     }
+  }
+
+  // A bus heads for its next stop, waits there BUS_DWELL seconds, then carries on.
+  function busStopLimit(lane, bus, dt) {
+    var stops = lane.busStops || [];
+    if (bus.busStop >= stops.length) return Infinity;
+    var at = stops[bus.busStop];
+    if (bus.dwell > 0) {
+      bus.dwell -= dt;
+      if (bus.dwell <= 0) { bus.dwell = 0; bus.busStop++; }
+      return bus.s;
+    }
+    if (bus.s >= at - 0.5) {
+      bus.dwell = BUS_DWELL;
+      return bus.s;
+    }
+    return at;
+  }
+
+  // Lights ahead of an ambulance turn green for it and stay that way until it has gone through.
+  // The usual rules still apply to everyone (amber, all-red, don't block the box), so this can't
+  // cause gridlock; it only decides who gets the green.
+  function clearWayForAmbulances(g) {
+    g.lanes.forEach(function (lane) {
+      lane.cars.forEach(function (car) {
+        if (!car.ambulance || !car.plan || car.s > car.plan.stop.line) return;
+        if (car.plan.stop.line - car.s > AMBULANCE_REACH) return;
+        var light = car.plan.stop.light;
+        if (light.axis !== lane.axis) flip(g, light);
+        else if (light.phase === 'arrow') { light.phase = 'green'; light.greenFor = 0; }
+        light.holdUntil = Math.max(light.holdUntil || 0, g.time + 1);
+        light.forAmbulance = g.time + 1;
+      });
+    });
+  }
+
+  // Cars just ahead of an ambulance get out of its way: on an avenue they move over when there's
+  // room; on a one-lane street they ease toward the curb (only drawn, there's nowhere to go).
+  function markYielding(g) {
+    g.lanes.forEach(function (lane) {
+      var siren = null;
+      for (var i = lane.cars.length - 1; i >= 0; i--) {
+        var c = lane.cars[i];
+        if (c.ambulance) { siren = c; c.aside = false; continue; }
+        c.aside = !!siren && c.s - c.len - siren.s < YIELD_REACH && c.s > siren.s;
+      }
+    });
   }
 
   // Cars that finished a curve move onto their new lane, just past the intersection.
@@ -847,7 +975,7 @@
     if (behind !== null) {
       var stop = target.stops[behind];
       if (car.s - car.len < stop.boxEnd + 2) return false;   // still in the intersection
-      if (!hasSpace(target, stop)) return false;
+      if (!hasSpace(target, stop, car.slots)) return false;
     }
     return true;
   }
@@ -861,7 +989,7 @@
         if (car.settle) car.settle = Math.abs(car.settle) < 0.01 ? 0 : car.settle * Math.pow(0.0001, dt / 0.35);
         if (car.shift > 0) car.shift = Math.max(0, car.shift - dt / car.shiftTime);
         if (car.cooldown > 0) car.cooldown -= dt;
-        if (!lane.sibling || car.shift > 0 || car.s < 2 * car.len) return;
+        if (!lane.sibling || car.shift > 0 || car.s < 2 * car.len || car.bus || car.ambulance) return;
         var plan = car.plan;
         if (!plan || isTurning(car)) return;
         // The stretch past the next light is closed: a car going straight there has to merge,
@@ -876,7 +1004,9 @@
           return;
         }
         var reason = null;
-        if (plan.want) reason = 'turn';
+        var over = nextStop(lane.sibling, car.s);
+        if (car.aside && plan.turn === 'straight' && !plan.want && !(over && over.closed)) reason = 'pass';
+        else if (plan.want) reason = 'turn';
         else if (plan.turn === 'straight' && car.cooldown <= 0 && car.v < 0.6 * lane.maxSpeed) {
           // Stuck behind a slow or stopped car (often a waiting left-turner), with clearly more
           // room in the other lane: pass.
@@ -928,7 +1058,17 @@
 
   function spawnCars(g, dt) {
     var cfg = g.cfg, rate = spawnRate(g);
+    if (g.ambulances && g.time >= g.nextAmbulance) {
+      sendAmbulance(g, g.ambulanceRng());
+      g.nextAmbulance += AMBULANCE_EVERY * (0.6 + 0.8 * g.ambulanceRng());
+    }
     g.lanes.forEach(function (lane) {
+      // Buses keep their timetable whether or not they're switched on, so turning them on later
+      // (or comparing two maps) doesn't shift anything else.
+      if (lane.busStops && g.time >= lane.nextBus) {
+        lane.nextBus += BUS_EVERY;
+        if (g.buses) { lane.busesWaiting = (lane.busesWaiting || 0) + 1; lane.buses++; }
+      }
       // The timer counts down in "expected arrivals", not seconds: it drops by this lane's current
       // rate times dt. A gap measured in seconds would be fixed at whatever the rate was when it was
       // drawn, so a late-night gap of ~15 s would hold back the stadium crowd for half its burst.
@@ -947,6 +1087,21 @@
       var hasRoom = (!last || last.s - last.len >= cfg.minGap) && !(lane.ghosts || []).some(function (gh) {
         return gh.s - gh.len < cfg.minGap;
       });
+      // An ambulance goes ahead of everyone queued at the edge, then any bus.
+      if (hasRoom && (lane.ambulancesWaiting || lane.busesWaiting)) {
+        var amb = lane.ambulancesWaiting > 0;
+        if (amb) lane.ambulancesWaiting--; else lane.busesWaiting--;
+        var special = {
+          id: g.nextId++, s: 0,
+          v: last ? Math.min(cfg.maxSpeed, last.v) : cfg.maxSpeed * 0.8,
+          len: amb ? AMBULANCE_LENGTH : BUS_LENGTH,
+          slots: 2, wait: 0, totalWait: 0, rng: neverTurn,
+          bus: !amb, ambulance: amb, busStop: 0, dwell: 0
+        };
+        special.plan = makePlan(g, lane, 0, 'straight');
+        lane.cars.push(special);
+        return;
+      }
       if (lane.offMap > 0 && hasRoom) {
         lane.offMap--;
         var arrival = lane.pending.shift();
@@ -1096,8 +1251,11 @@
   function step(g, dt) {
     if (g.over) return;
     g.time += dt;
+    g.wx = WEATHER[currentWeather(g)];
     openDueRoads(g);
     if (g.chill) autoSwitch(g, dt);
+    clearWayForAmbulances(g);
+    markYielding(g);
     updateLights(g, dt);
     changeLanes(g, dt);
     markBoxes(g);
@@ -1189,6 +1347,10 @@
     resetTally: resetTally,
     KINDS: KINDS,
     kindNote: kindNote,
+    currentWeather: currentWeather,
+    sendAmbulance: sendAmbulance,
+    setBuses: function (g, on) { g.buses = on; },
+    setWeather: function (g, w) { g.weather = w; },
     step: step,
     flip: flip,
     lightAt: lightAt,
