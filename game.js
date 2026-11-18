@@ -16,14 +16,16 @@
     green: '#2fbf6b', amber: '#f5a524', red: '#e5484d', chip: '#f5f1e8', arrow: '#22252b',
     paper: '#f5f1e8', ink: '#22252b', muted: '#4f525a', track: '#e2dccf', rush: '#e0b15a',
     spark: '#c47a12', danger: '#b3262b', median: '#d9d1c0',
-    sideA: '#24539a', sideAInk: '#f5f1e8', sideB: '#c47a12', sideBInk: '#22252b'
+    sideA: '#24539a', sideAInk: '#f5f1e8', sideB: '#c47a12', sideBInk: '#22252b',
+    stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00'
   };
   var NIGHT = {
     map: '#3b362e', grid: '#453f36', road: '#1c1b19', dash: '#5a554c', car: '#f4ead6',
     green: '#5fd38d', amber: '#ffb547', red: '#ff6a5a', chip: '#3b362e', arrow: '#f1e9da',
     paper: '#2b2722', ink: '#f1e9da', muted: '#b5aa96', track: '#463f36', rush: '#c48a35',
     spark: '#ffd166', danger: '#ff8a80', median: '#4d473c',
-    sideA: '#8fb3ea', sideAInk: '#2b2722', sideB: '#ffb547', sideBInk: '#2b2722'
+    sideA: '#8fb3ea', sideAInk: '#2b2722', sideB: '#ffb547', sideBInk: '#2b2722',
+    stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d'
   };
   var CSS_VARS = ['map', 'paper', 'ink', 'muted', 'track', 'rush', 'spark', 'danger', 'sideA', 'sideAInk', 'sideB', 'sideBInk'];
   // CSS custom property names for the palette keys (sideA -> --side-a).
@@ -48,6 +50,14 @@
   var START_HOUR = Number(new URLSearchParams(location.search).get('hour'));
 
   var STRATEGY_NAMES = { smart: 'Smart', timer: 'Timer', wave: 'Green wave' };
+  var KIND_NAMES = { normal: 'Normal', commute: 'Commute', stadium: 'Stadium', sunday: 'Sunday', construction: 'Construction' };
+  var KIND_NOTES = {
+    normal: 'Normal: two rush hours; some streets are busier than others.',
+    commute: 'Commute: mornings most avenue traffic heads east into town; evenings it heads back west.',
+    stadium: 'Stadium: a quieter day, then the game lets out at 9:30 PM and the crowd pours out of the north-east corner. (About 4 minutes in at 1×.)',
+    sunday: 'Sunday: no rush hours, light traffic all day, and more people turning.',
+    construction: 'Construction: one lane of the lower avenue is closed past its first light, so drivers merge early.'
+  };
   var LEAD_MIN_TRIPS = 20;   // trips each map needs today before one is called ahead
 
   var STRATEGY_NOTES = {
@@ -71,6 +81,8 @@
     controlsOpen: $('controlsOpen'), controlsClose: $('controlsClose'), backdrop: $('sheetBackdrop'),
     sheetChallenge: $('sheetChallenge'),
     traffic: $('traffic'), trafficName: $('trafficName'),
+    sheetSpeedButtons: $('sheetSpeedButtons'), kindButtons: $('kindButtons'), kindNote: $('kindNote'),
+    controlTabs: $('controlTabs'), cmpKindButtons: $('cmpKindButtons'),
     compareButton: $('compareButton'), sheetCompare: $('sheetCompare'),
     compare: $('compare'), compareExit: $('compareExit'), cmpExitPhone: $('cmpExitPhone'), cmpPause: $('cmpPause'),
     cmpClock: $('cmpClock'), cmpPhase: $('cmpPhase'), cmpMarker: $('cmpMarker'),
@@ -91,6 +103,7 @@
   var palette = DAY, paletteDarkness = -1;
   var chart = [], nextSample = 0;
   var drawn = game;            // the city the drawing functions are drawing right now
+  var drawRotated = false;     // ...and whether that view is turned (labels are turned back upright)
 
   // The main map, and the two compare maps. Each has its own canvas, scale and turn.
   var mainView = { canvas: canvas, ctx: ctx, box: mapEl, border: 0, scale: 1, rotated: false };
@@ -220,6 +233,7 @@
   function drawInto(view, city, darkness, nowMs) {
     ctx = view.ctx;
     drawn = city;
+    drawRotated = view.rotated;
     draw(darkness, nowMs);
   }
 
@@ -227,7 +241,9 @@
     ctx.fillStyle = palette.map;
     ctx.fillRect(0, 0, W, H);
     drawGrid();
+    if (drawn.stadium) drawStadium();
     drawRoads();
+    if (drawn.construction) drawConstruction();
     if (darkness > 0) drawStreetlights(darkness);
     var queues = kind === 'challenge' ? Sim.edgeQueues(drawn) : null;
     if (queues) drawDanger(queues);
@@ -278,6 +294,89 @@
     // Plain boxes over the crossings so lines and medians don't run through them.
     ctx.fillStyle = palette.road;
     drawn.lights.forEach(function (l) { ctx.fillRect(l.x - l.hx, l.y - l.hy, l.hx * 2, l.hy * 2); });
+  }
+
+  // The stadium fills (up to a size) the block north-east of the last crossing: an outlined bowl
+  // with a pale field, like a building on a paper street map.
+  function drawStadium() {
+    var st = drawn.stadium, pad = 16;
+    var bx0 = st.x0 + pad, bx1 = W - pad, by0 = pad, by1 = st.y1 - pad;
+    var w = Math.min(280, bx1 - bx0), h = Math.min(136, by1 - by0);
+    if (w < 60 || h < 40) return;
+    var cx = (bx0 + bx1) / 2, cy = (by0 + by1) / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = palette.stadium;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = palette.ink;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w / 2 - 44, h / 2 - 28, 0, 0, Math.PI * 2);
+    ctx.fillStyle = palette.field;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawLabel('STADIUM', cx, cy, null, palette.ink, 15);
+  }
+
+  // The closed lane: amber and ink stripes, a few cones where it starts, and a tag beside the road.
+  function drawConstruction() {
+    var c = drawn.construction, lane = c.lane;
+    var r = laneRect(lane, c.from, c.to, lane.width - 2);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+    ctx.fillStyle = palette.road;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = palette.closed;
+    ctx.lineWidth = 8;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    for (var x = r.x - r.h - 20; x < r.x + r.w + r.h + 20; x += 18) {
+      ctx.moveTo(x, r.y + r.h);
+      ctx.lineTo(x + r.h, r.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    // Cones in a short diagonal where the lane closes, pushing traffic over.
+    ctx.fillStyle = palette.cone;
+    ctx.strokeStyle = palette.paper;
+    ctx.lineWidth = 1.5;
+    for (var k = 0; k < 4; k++) {
+      var p = lanePoint(lane, c.from + 6 + k * 9);
+      var side = (k / 3 - 0.5) * (lane.width - 8);   // across the lane, curb side to median side
+      var px = p.x, py = p.y;
+      if (lane.axis === 'ew') py += (lane.dir === 'E' ? 1 : -1) * side; else px += (lane.dir === 'S' ? -1 : 1) * side;
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    var mid = lanePoint(lane, (c.from + Math.min(c.to, c.from + 500)) / 2);
+    var road = lane.road;
+    if (lane.axis === 'ew') drawLabel('LANE CLOSED', mid.x, road.c + road.half + 16, palette.closed, '#22252b', 12);
+    else drawLabel('LANE CLOSED', road.c + road.half + 60, mid.y, palette.closed, '#22252b', 12);
+  }
+
+  // Text at a world point, kept upright when the map is drawn turned (phones held upright).
+  function drawLabel(text, x, y, bg, fg, size) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (drawRotated) ctx.rotate(-Math.PI / 2);
+    ctx.font = '800 ' + size + 'px Archivo, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '1.5px';
+    if (bg) {
+      var w = ctx.measureText(text).width + 14, h = size + 10;
+      ctx.fillStyle = bg;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+    ctx.fillStyle = fg;
+    ctx.fillText(text, 0, 1);
+    ctx.restore();
   }
 
   // A warm pool of light around each intersection after dark.
@@ -479,7 +578,7 @@
   function updateChillStrip() {
     var hour = Sim.hourOfDay(game);
     setText(ui.dayClock, formatHour(hour));
-    setText(ui.dayPhase, Sim.dayPhase(hour));
+    setText(ui.dayPhase, Sim.kindNote(game) || Sim.dayPhase(hour));
     ui.dayMarker.style.left = (hour / 24 * 100).toFixed(2) + '%';
     var wait = Sim.averageWait(game);
     setText(ui.avgWait, wait === null ? '–' : wait.toFixed(1) + 's');
@@ -548,7 +647,7 @@
   function updateCompareStrip() {
     var hour = Sim.hourOfDay(cmp.a);
     setText(ui.cmpClock, formatHour(hour));
-    setText(ui.cmpPhase, Sim.dayPhase(hour));
+    setText(ui.cmpPhase, Sim.kindNote(cmp.a) || Sim.dayPhase(hour));
     ui.cmpMarker.style.left = (hour / 24 * 100).toFixed(2) + '%';
 
     // Who is ahead goes by today's average, which settles down; the last minute jumps around.
@@ -601,7 +700,7 @@
 
   // Chill settings are remembered per browser so the city comes back the way you left it.
   function loadPrefs() {
-    var p = { lights: 4, traffic: 45, strategy: 'smart', speed: 1, arrows: true, compare: null };
+    var p = { lights: 4, traffic: 45, strategy: 'smart', speed: 1, arrows: true, compare: null, kind: 'normal', tab: 'lights' };
     try {
       var saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
       if ([1, 2, 4, 6].indexOf(saved.lights) >= 0) p.lights = saved.lights;
@@ -609,6 +708,8 @@
       if (STRATEGY_NOTES[saved.strategy]) p.strategy = saved.strategy;
       if ([1, 2, 4].indexOf(saved.speed) >= 0) p.speed = saved.speed;
       if (typeof saved.arrows === 'boolean') p.arrows = saved.arrows;
+      if (KIND_NAMES[saved.kind]) p.kind = saved.kind;
+      if (saved.tab === 'lights' || saved.tab === 'traffic') p.tab = saved.tab;
       var c = saved.compare;
       if (c && c.a && c.b && STRATEGY_NOTES[c.a.strategy] && STRATEGY_NOTES[c.b.strategy]) {
         p.compare = {
@@ -635,7 +736,7 @@
 
   // `hour` (optional) starts the day at that time, so leaving compare mode carries on the same day.
   function newChillGame(hour) {
-    var options = { strategy: prefs.strategy, arrows: prefs.arrows };
+    var options = { strategy: prefs.strategy, arrows: prefs.arrows, kind: prefs.kind };
     if (START_HOUR >= 0 && START_HOUR < 24 && location.search.indexOf('hour=') >= 0) options.dayStartHour = START_HOUR;
     if (hour !== undefined) options.dayStartHour = hour;
     return Sim.createChill(prefs.lights, trafficRate(prefs.traffic), options);
@@ -647,7 +748,7 @@
     ['a', 'b'].forEach(function (side) {
       var setup = prefs.compare[side];
       cmp[side] = Sim.createChill(prefs.lights, trafficRate(prefs.traffic),
-        { seed: seed, strategy: setup.strategy, arrows: setup.arrows, dayStartHour: hour });
+        { seed: seed, strategy: setup.strategy, arrows: setup.arrows, kind: prefs.kind, dayStartHour: hour });
     });
     cmp.chartA = [];
     cmp.chartB = [];
@@ -674,6 +775,7 @@
     setText(ui.cmpLegendB, 'B · ' + STRATEGY_NAMES[prefs.compare.b.strategy]);
     markPressed(ui.cmpLayoutButtons, prefs.lights);
     markPressed(ui.cmpSpeedButtons, prefs.speed);
+    markPressed(ui.cmpKindButtons, prefs.kind);
     ui.cmpTraffic.value = String(prefs.traffic);
     ui.cmpTrafficName.textContent = trafficName(prefs.traffic);
   }
@@ -690,8 +792,24 @@
     markPressed(ui.layoutButtons, prefs.lights);
     markPressed(ui.strategyButtons, prefs.strategy);
     markPressed(ui.speedButtons, prefs.speed);
+    markPressed(ui.sheetSpeedButtons, prefs.speed);
     markPressed(ui.arrowButtons, prefs.arrows ? 'on' : 'off');
+    markPressed(ui.kindButtons, prefs.kind);
     ui.strategyNote.textContent = STRATEGY_NOTES[prefs.strategy];
+    ui.kindNote.textContent = KIND_NOTES[prefs.kind];
+    showTab(prefs.tab);
+  }
+
+  // Lights / Traffic tabs over the chill controls.
+  function showTab(name) {
+    Array.prototype.forEach.call(ui.controlTabs.querySelectorAll('[role="tab"]'), function (t) {
+      var on = t.dataset.tab === name;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#controlsSheet .tab-panel'), function (p) {
+      p.hidden = p.dataset.tab !== name;
+    });
   }
 
   // ------------------------------------------------------------------ game flow
@@ -964,6 +1082,37 @@
   onSegment(ui.speedButtons, function (value) {
     prefs.speed = Number(value);
   });
+  onSegment(ui.sheetSpeedButtons, function (value) {
+    prefs.speed = Number(value);
+  });
+
+  // A different traffic kind is a different day, so the day starts again.
+  onSegment(ui.kindButtons, function (value) {
+    if (prefs.kind === value) return;
+    prefs.kind = value;
+    game = newChillGame();
+    resetChart();
+  });
+
+  ui.controlTabs.addEventListener('click', function (e) {
+    var tab = e.target.closest('[role="tab"]');
+    if (!tab) return;
+    prefs.tab = tab.dataset.tab;
+    savePrefs();
+    showTab(prefs.tab);
+  });
+  // Arrow keys move between tabs, as screen-reader users expect from a tab list.
+  ui.controlTabs.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    var tabs = Array.prototype.slice.call(ui.controlTabs.querySelectorAll('[role="tab"]'));
+    var at = tabs.indexOf(document.activeElement);
+    if (at < 0) return;
+    var next = tabs[(at + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    prefs.tab = next.dataset.tab;
+    savePrefs();
+    showTab(prefs.tab);
+    next.focus();
+  });
 
   ui.traffic.addEventListener('input', function () {
     prefs.traffic = Number(ui.traffic.value);
@@ -1036,6 +1185,14 @@
     prefs.lights = Number(value);
     restartCompare('Both maps restarted with ' + value + (value === '1' ? ' light' : ' lights'));
     resize();
+  });
+
+  // A new traffic kind is a new day for both maps.
+  onCompareSegment(ui.cmpKindButtons, function (value) {
+    if (prefs.kind === value) return;
+    prefs.kind = value;
+    startCompare(cfg.dayStartHour);
+    showToast('New day on both maps: ' + KIND_NAMES[value]);
   });
 
   onCompareSegment(ui.cmpSpeedButtons, function (value) {

@@ -221,6 +221,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--fed-up); ou
   font-variant-numeric: tabular-nums;
 }
 .value.small { font-size: 28px; }
+/* The note under the clock ("commute into town") can be long, so it gets its own line. */
+.time-stat .value-row { flex-direction: column; align-items: flex-start; gap: 2px; }
 .value-row { display: flex; align-items: baseline; gap: 8px; }
 .sub { font-size: 13px; color: var(--muted); }
 
@@ -247,7 +249,32 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--fed-up); ou
 body.mode-chill .challenge-only,
 body.mode-challenge .chill-only { display: none; }
 
-.controls { gap: 12px 28px; }
+.controls { gap: 10px 28px; }
+
+/* Lights / Traffic tabs over the chill controls. Each panel is one row of controls. */
+.tabs { flex-basis: 100%; display: flex; border-bottom: 2px solid var(--ink); }
+.tabs [role="tab"] {
+  height: 38px;
+  padding: 0 18px;
+  margin-bottom: -2px;
+  border: 2px solid transparent;
+  border-bottom-color: var(--ink);
+  background: transparent;
+  color: var(--muted);
+  font-family: Archivo, sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
+.tabs [role="tab"][aria-selected="true"] {
+  border-color: var(--ink);
+  border-bottom-color: var(--paper);
+  background: var(--paper);
+  color: var(--ink);
+}
+.tabs-speed { margin-left: auto; padding-bottom: 6px; }
+.tab-panel { flex-basis: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 28px; }
+.tab-panel[hidden] { display: none; }
 .control { display: flex; align-items: center; gap: 10px; }
 
 .segmented { display: flex; }
@@ -392,6 +419,14 @@ body.phone .strategy-note { min-width: 0; flex: none; }
 body.phone #sheetChallenge,
 body.phone #sheetCompare { justify-content: center; align-items: center; }
 body.phone #compareButton { display: none; }
+body.phone .desktop-only { display: none !important; }
+body.phone .tabs [role="tab"] { flex: 1; height: 44px; }
+body.phone .tab-panel { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 12px; }
+/* Five traffic kinds don't fit in one row on a phone: three, then two. */
+body.phone .kind-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+body.phone .kind-seg button { margin-left: 0; padding: 0 4px; }
+body.phone .controls .control.kind-control { flex-direction: column; align-items: stretch; gap: 6px; }
+body.phone .controls .control.kind-control > .label { width: auto; }
 
 .sheet-backdrop {
   position: fixed;

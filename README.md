@@ -6,8 +6,9 @@ more cars waiting.
 
 - **Chill (default):** nothing to lose. A day passes every 6 minutes (at 1×), with a morning
   and evening rush hour and a quiet night when the map dims to lamplight and cars get headlights.
-  Pick 1, 2, 4 or 6 lights, how the lights decide (Smart, Timer or Green wave), the speed
-  (1×/2×/4×) and how busy the city is. Click any light to switch it yourself; the strategy leaves
+  The controls sit in two tabs: **Lights** (1, 2, 4 or 6 lights, how they decide: Smart, Timer or
+  Green wave, and left arrows) and **Traffic** (how busy the city is, and what kind of day it is:
+  see Traffic kinds). Speed (1×/2×/4×) stays beside the tabs. Click any light to switch it yourself; the strategy leaves
   it alone for 8 seconds. The strip shows the average wait per trip and a chart of it. Settings
   are remembered.
 - **Compare:** two copies of the city side by side, each running its own lights (Smart, Timer
@@ -33,6 +34,7 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
 - `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes): `node overlap-test.js`.
 - `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
+- `kinds-test.js`: runs every traffic kind on every layout and checks nothing gridlocks, no car drives on the closed lane, and the stadium crowd shows up: `node kinds-test.js`.
 
 ## How the cars move
 
@@ -95,6 +97,28 @@ you can watch the average-wait chart move.
   east it is, by the time a car needs to drive there. Eastbound groups hit green after green.
   At rush hour on 6 lights it beats Smart (about 5 s vs 6.5 s average wait).
 
+## Traffic kinds
+
+The **Traffic** tab picks what kind of day it is. Picking one starts the day again (both maps, in
+compare mode, where it is shared so the race stays fair).
+
+- **Normal:** two rush hours; some streets are busier than others.
+- **Commute:** the same day, but in the morning most avenue traffic heads east "into town" (about
+  2.5× as many eastbound cars, 0.4× westbound at the peak) and in the evening it flips.
+- **Stadium:** a slightly quieter day, then a night game lets out at 9:30 PM. For about two game
+  hours a crowd pours in from the stadium in the north-east block: southbound on the east-most
+  street and westbound on the top avenue.
+- **Sunday:** no rush hours, light all day, and half of cars turn at each light instead of 35%.
+- **Construction:** the lower avenue's eastbound curb lane is closed on the stretch past its first
+  light. That stretch has no room at all as far as "don't block the box" is concerned, so straight
+  cars in the curb lane merge into the inner lane before the light (waiting at the line for a gap
+  if they have to); right turns from it still go. Turns only ever lead onto streets out of the
+  city, so nobody can turn into the closed stretch, and the gridlock rules hold.
+
+Arrivals follow the rate as it changes. Each lane counts down in "expected arrivals" (rate × time)
+rather than seconds, so a long late-night gap can't hold back the stadium crowd, and moving the
+traffic slider takes effect at once.
+
 ## Compare mode
 
 **Compare setups** (in the controls; on phones, in the Controls sheet) opens two maps side by side:
@@ -114,7 +138,7 @@ lights draw extra random numbers for their offsets, which would shift every car 
 `compare-test.js` checks arrivals and first turns match exactly.
 
 **Changing a map's lights, or the number of lights, restarts both maps** from empty roads at the
-same time of day, with new cars. Switching one city mid-run would leave it with the other
+same time of day, with new cars (a new traffic kind starts a new day). Switching one city mid-run would leave it with the other
 setup's queues, which isn't a fair race. Traffic and speed change both live.
 
 One thing the numbers leave out (in every mode): when a lane is backed up to the edge, new arrivals

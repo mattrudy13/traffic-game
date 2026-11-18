@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=0.9.0">
+<link rel="stylesheet" href="style.css?v=0.10.0">
 </head>
 <body class="mode-chill">
 <main class="game">
@@ -49,7 +49,7 @@
       </div>
       <div class="divider" aria-hidden="true"></div>
 
-      <div class="stat chill-only">
+      <div class="stat chill-only time-stat">
         <span class="label">Time of day</span>
         <span class="value-row"><span class="value small" id="dayClock">6:30 AM</span><span class="sub" id="dayPhase">early morning</span></span>
         <div class="day-bar" aria-hidden="true">
@@ -96,51 +96,79 @@
       <button class="secondary phone-only chill-only controls-open" id="controlsOpen" aria-controls="controlsSheet" aria-expanded="false">Controls</button>
     </div>
 
-    <!-- Chill mode controls (a pull-up sheet on phones) -->
+    <!-- Chill mode controls, in tabs (a pull-up sheet on phones) -->
     <div class="strip-row controls chill-only" id="controlsSheet">
       <div class="sheet-head phone-only">
         <span>Controls</span>
         <button class="sheet-close" id="controlsClose" aria-label="Close controls">×</button>
       </div>
-      <div class="control">
-        <span class="label" id="layoutLabel">Lights</span>
-        <div class="segmented" role="group" aria-labelledby="layoutLabel" id="layoutButtons">
-          <button data-value="1" aria-pressed="false">1</button>
-          <button data-value="2" aria-pressed="false">2</button>
-          <button data-value="4" aria-pressed="true">4</button>
-          <button data-value="6" aria-pressed="false">6</button>
-        </div>
-      </div>
-      <div class="control">
-        <span class="label" id="strategyLabel">Lights run on</span>
-        <div class="segmented" role="group" aria-labelledby="strategyLabel" id="strategyButtons">
-          <button data-value="smart" aria-pressed="true">Smart</button>
-          <button data-value="timer" aria-pressed="false">Timer</button>
-          <button data-value="wave" aria-pressed="false">Green wave</button>
-        </div>
-      </div>
-      <div class="control">
-        <span class="label" id="arrowsLabel">Left arrows</span>
-        <div class="segmented" role="group" aria-labelledby="arrowsLabel" id="arrowButtons">
-          <button data-value="on" aria-pressed="true">On</button>
-          <button data-value="off" aria-pressed="false">Off</button>
-        </div>
-      </div>
-      <div class="control">
-        <span class="label" id="speedLabel">Speed</span>
-        <div class="segmented" role="group" aria-labelledby="speedLabel" id="speedButtons">
+      <div class="control phone-only">
+        <span class="label" id="sheetSpeedLabel">Speed</span>
+        <div class="segmented speed-seg" role="group" aria-labelledby="sheetSpeedLabel" id="sheetSpeedButtons">
           <button data-value="1" aria-pressed="true">1×</button>
           <button data-value="2" aria-pressed="false">2×</button>
           <button data-value="4" aria-pressed="false">4×</button>
         </div>
       </div>
-      <div class="control">
-        <label class="label" for="traffic">City traffic</label>
-        <input type="range" id="traffic" min="0" max="100" value="45">
-        <span class="sub" id="trafficName">normal</span>
+
+      <div class="tabs" role="tablist" aria-label="Controls" id="controlTabs">
+        <button role="tab" id="tabLights" aria-controls="panelLights" aria-selected="true" data-tab="lights">Lights</button>
+        <button role="tab" id="tabTraffic" aria-controls="panelTraffic" aria-selected="false" data-tab="traffic" tabindex="-1">Traffic</button>
+        <!-- Speed sits outside the tabs so it is always one click away. -->
+        <div class="control desktop-only tabs-speed">
+          <span class="label" id="speedLabel">Speed</span>
+          <div class="segmented speed-seg" role="group" aria-labelledby="speedLabel" id="speedButtons">
+            <button data-value="1" aria-pressed="true">1×</button>
+            <button data-value="2" aria-pressed="false">2×</button>
+            <button data-value="4" aria-pressed="false">4×</button>
+          </div>
+        </div>
       </div>
-      <p class="strategy-note" id="strategyNote"></p>
-      <button class="secondary" id="compareButton">Compare setups</button>
+
+      <div class="tab-panel" role="tabpanel" id="panelLights" aria-labelledby="tabLights" data-tab="lights">
+        <div class="control">
+          <span class="label" id="layoutLabel">Lights</span>
+          <div class="segmented" role="group" aria-labelledby="layoutLabel" id="layoutButtons">
+            <button data-value="1" aria-pressed="false">1</button>
+            <button data-value="2" aria-pressed="false">2</button>
+            <button data-value="4" aria-pressed="true">4</button>
+            <button data-value="6" aria-pressed="false">6</button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="label" id="strategyLabel">Lights run on</span>
+          <div class="segmented" role="group" aria-labelledby="strategyLabel" id="strategyButtons">
+            <button data-value="smart" aria-pressed="true">Smart</button>
+            <button data-value="timer" aria-pressed="false">Timer</button>
+            <button data-value="wave" aria-pressed="false">Green wave</button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="label" id="arrowsLabel">Left arrows</span>
+          <div class="segmented" role="group" aria-labelledby="arrowsLabel" id="arrowButtons">
+            <button data-value="on" aria-pressed="true">On</button>
+            <button data-value="off" aria-pressed="false">Off</button>
+          </div>
+        </div>
+        <p class="strategy-note" id="strategyNote"></p>
+        <button class="secondary desktop-only" id="compareButton">Compare setups</button>
+      </div>
+
+      <div class="tab-panel" role="tabpanel" id="panelTraffic" aria-labelledby="tabTraffic" data-tab="traffic" hidden>
+        <div class="control">
+          <label class="label" for="traffic">City traffic</label>
+          <input type="range" id="traffic" min="0" max="100" value="45">
+          <span class="sub" id="trafficName">normal</span>
+        </div>
+        <div class="control kind-control">
+          <span class="label" id="kindLabel">Traffic kind</span>
+          <div class="segmented kind-seg" role="group" aria-labelledby="kindLabel" id="kindButtons">
+            <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction">Construction</button>
+          </div>
+        </div>
+        <p class="strategy-note" id="kindNote"></p>
+      </div>
+
       <button class="secondary phone-only" id="sheetCompare">Compare two light setups</button>
       <button class="secondary phone-only" id="sheetChallenge">Try challenge</button>
     </div>
@@ -274,6 +302,12 @@
               <button data-value="1">1</button><button data-value="2">2</button><button data-value="4">4</button><button data-value="6">6</button>
             </div>
           </div>
+          <div class="control kind-control">
+            <span class="label" id="cmpKindLabel">Traffic kind</span>
+            <div class="segmented kind-seg" role="group" aria-labelledby="cmpKindLabel" id="cmpKindButtons">
+              <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction">Construction</button>
+            </div>
+          </div>
           <div class="control">
             <span class="label" id="cmpSpeedLabel">Speed</span>
             <div class="segmented" role="group" aria-labelledby="cmpSpeedLabel" id="cmpSpeedButtons">
@@ -285,7 +319,7 @@
             <input type="range" id="cmpTraffic" min="0" max="100" value="45">
             <span class="sub" id="cmpTrafficName">normal</span>
           </div>
-          <p class="strategy-note phone-only">Changing a map's lights or the number of lights restarts both maps, so the race stays fair.</p>
+          <p class="strategy-note phone-only">Changing a map's lights, the number of lights or the traffic kind restarts both maps, so the race stays fair.</p>
         </div>
 
         <button class="pause" id="cmpPause" aria-label="Pause">
@@ -299,7 +333,7 @@
   </section>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 </main>
-<script src="sim.js?v=0.9.0"></script>
-<script src="game.js?v=0.9.0"></script>
+<script src="sim.js?v=0.10.0"></script>
+<script src="game.js?v=0.10.0"></script>
 </body>
 </html>
