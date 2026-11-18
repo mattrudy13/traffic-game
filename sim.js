@@ -108,11 +108,32 @@
   var LEFT_OF = { E: 'N', N: 'W', W: 'S', S: 'E' };
   var RIGHT_OF = { E: 'S', S: 'W', W: 'N', N: 'E' };
 
+  // Seeded random numbers (mulberry32), so a city can be replayed exactly.
+  function seeded(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Mixes a seed with some whole numbers into a new seed, for one lane's or one car's own stream.
+  function mixSeed(seed) {
+    var h = seed >>> 0;
+    for (var i = 1; i < arguments.length; i++) {
+      h = Math.imul(h ^ (arguments[i] >>> 0), 0x9E3779B1);
+      h ^= h >>> 15;
+    }
+    return h >>> 0;
+  }
+
   function createGame(options) {
     var cfg = Object.assign({}, CONFIG, options || {});
     var g = {
       cfg: cfg,
-      rng: cfg.rng || Math.random,
+      // With a seed, setup (lane busyness, first light directions, Timer offsets) is seeded too.
+      rng: cfg.rng || (cfg.seed !== undefined ? seeded(mixSeed(cfg.seed, 0x5e7)) : Math.random),
       time: 0,
       score: 0,
       over: false,
@@ -127,8 +148,16 @@
       traffic: null,       // chill mode: base arrival rate per lane (cars/s) instead of the ramp
       strategy: 'smart',   // chill mode: smart | timer | wave
       autoTimer: 0,
-      exits: []            // {t, wait} for cars that recently left the map
+      exits: [],           // {t, wait} for cars that recently left the map
+      tally: { count: 0, sum: 0, worst: 0 }   // every trip since resetTally (compare mode's "today")
     };
+    // Arrivals and turn choices come from their own streams per lane and per car, not from g.rng.
+    // Why: compare mode runs two cities with different lights side by side. If both drew from one
+    // shared stream, a light strategy that used one extra number (Timer's random offsets) would
+    // shift every car after it and the two cities would get different traffic. With a stream per
+    // lane, arrivals depend only on the seed and the clock; with one per car, the 5th car on a
+    // lane makes the same turns in both cities.
+    g.seed = cfg.seed !== undefined ? cfg.seed >>> 0 : Math.floor(g.rng() * 4294967296);
     openDueRoads(g);
     return g;
   }
@@ -203,6 +232,11 @@
     return 'night';
   }
 
+  // Start counting trips afresh (compare mode does this at midnight).
+  function resetTally(g) {
+    g.tally = { count: 0, sum: 0, worst: 0 };
+  }
+
   // Average seconds stopped per trip, over cars that left in the last `waitWindow` seconds.
   function averageWait(g) {
     if (!g.exits.length) return null;
@@ -266,9 +300,12 @@
         cars: [],            // front-most car first
         stops: [],
         offMap: 0,           // cars that arrived but have no room to enter yet
-        spawnTimer: g.rng() * 4,
+        pending: [],         // their arrival numbers, oldest first (offMap === pending.length)
+        arrivals: 0,
+        rng: seeded(mixSeed(g.seed, g.lanes.length)),
         weight: 1
       };
+      lane.spawnTimer = lane.rng() * 4;
       g.lanes.push(lane);
       added.push(lane);
     });
@@ -363,7 +400,7 @@
     // Plans point at stops, which were just rebuilt: give every car not mid-turn a fresh plan.
     g.lanes.forEach(function (lane) {
       lane.cars.forEach(function (car) {
-        if (!isTurning(car)) car.plan = makePlan(g, lane, car.s);
+        if (!isTurning(car)) car.plan = makePlan(g, lane, car.s, null, car.rng);
       });
     });
   }
@@ -473,7 +510,7 @@
   // each one's front car waited to turn into the next full one. That is a circular wait, and
   // nothing could ever move again. Going straight always heads toward an edge, so if turns also
   // only lead toward an edge, no street can end up waiting on itself and gridlock is impossible.
-  function makePlan(g, lane, s, forced) {
+  function makePlan(g, lane, s, forced, rng) {
     var stop = nextStop(lane, s);
     if (!stop) return null;
     var turn = forced || 'straight';
@@ -483,8 +520,9 @@
       var canRight = stop.turns.right && stop.turns.right.stop.capacity === Infinity;
       var leftWeight = canLeft ? cfg.turnLeft : 0, rightWeight = canRight ? cfg.turnRight : 0;
       // Keep the overall share of turning cars the same even when only one turn is allowed here.
-      var r = g.rng() * (leftWeight + rightWeight) / (cfg.turnLeft + cfg.turnRight);
-      if (leftWeight + rightWeight > 0 && g.rng() < cfg.turnLeft + cfg.turnRight) {
+      rng = rng || g.rng;
+      var r = rng() * (leftWeight + rightWeight) / (cfg.turnLeft + cfg.turnRight);
+      if (leftWeight + rightWeight > 0 && rng() < cfg.turnLeft + cfg.turnRight) {
         turn = r < leftWeight / (cfg.turnLeft + cfg.turnRight) ? 'left' : 'right';
       }
     }
@@ -656,7 +694,7 @@
         else L.throughIn[lane.dir] = true;
         // Plan for the next light. (Look from just past this stop line: a car that crossed by a
         // hair would otherwise pick this same light again and never check the next one.)
-        if (plan.turn === 'straight') car.plan = makePlan(g, lane, Math.max(car.s, plan.stop.line + 0.01));
+        if (plan.turn === 'straight') car.plan = makePlan(g, lane, Math.max(car.s, plan.stop.line + 0.01), null, car.rng);
         // A turning car holds its space on the new lane from the moment it commits.
         else plan.stop.light.incoming[plan.target.id] = (plan.stop.light.incoming[plan.target.id] || 0) + 1;
       }
@@ -667,6 +705,9 @@
     while (cars.length && cars[0].s - cars[0].len > lane.length) {
       var gone = cars.shift();
       g.exits.push({ t: g.time, wait: gone.totalWait, id: gone.id });
+      g.tally.count++;
+      g.tally.sum += gone.totalWait;
+      g.tally.worst = Math.max(g.tally.worst, gone.totalWait);
       g.score++;
     }
   }
@@ -683,7 +724,7 @@
       var at = 0;
       while (at < lane.cars.length && lane.cars[at].s > car.s) at++;
       lane.cars.splice(at, 0, car);
-      car.plan = makePlan(g, lane, car.s);
+      car.plan = makePlan(g, lane, car.s, null, car.rng);
     });
   }
 
@@ -788,9 +829,13 @@
     g.lanes.forEach(function (lane) {
       lane.spawnTimer -= dt;
       if (lane.spawnTimer <= 0) {
-        if (!g.chill || lane.offMap < cfg.chillMaxOffMap) lane.offMap++;
+        lane.arrivals++;
+        if (!g.chill || lane.offMap < cfg.chillMaxOffMap) {
+          lane.offMap++;
+          lane.pending.push(lane.arrivals);
+        }
         // Random gaps between arrivals (exponential), so traffic comes in clumps like real traffic.
-        lane.spawnTimer = -Math.log(1 - g.rng()) / (rate * lane.weight);
+        lane.spawnTimer = -Math.log(1 - lane.rng()) / (rate * lane.weight);
       }
       var last = lane.cars[lane.cars.length - 1];
       var hasRoom = (!last || last.s - last.len >= cfg.minGap) && !(lane.ghosts || []).some(function (gh) {
@@ -798,15 +843,19 @@
       });
       if (lane.offMap > 0 && hasRoom) {
         lane.offMap--;
-        lane.cars.push({
+        var arrival = lane.pending.shift();
+        var car = {
           id: g.nextId++,
           s: 0,
           v: last ? Math.min(cfg.maxSpeed, last.v) : cfg.maxSpeed * 0.8,
           len: cfg.carLength,
           wait: 0,        // seconds stopped at the current light (drives the car's color)
           totalWait: 0,   // seconds stopped over the whole trip (drives the average wait)
-          plan: makePlan(g, lane, 0)
-        });
+          arrival: arrival,   // this car's number among the lane's arrivals (same car in both compare cities)
+          rng: seeded(mixSeed(g.seed, lane.id, arrival))
+        };
+        car.plan = makePlan(g, lane, 0, null, car.rng);
+        lane.cars.push(car);
       }
     });
   }
@@ -1031,6 +1080,7 @@
     darkness: darkness,
     dayPhase: dayPhase,
     averageWait: averageWait,
+    resetTally: resetTally,
     step: step,
     flip: flip,
     lightAt: lightAt,
