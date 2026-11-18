@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=0.8.4">
+<link rel="stylesheet" href="style.css?v=0.9.0">
 </head>
 <body class="mode-chill">
 <main class="game">
@@ -140,12 +140,166 @@
         <span class="sub" id="trafficName">normal</span>
       </div>
       <p class="strategy-note" id="strategyNote"></p>
+      <button class="secondary" id="compareButton">Compare setups</button>
+      <button class="secondary phone-only" id="sheetCompare">Compare two light setups</button>
       <button class="secondary phone-only" id="sheetChallenge">Try challenge</button>
     </div>
   </footer>
+
+  <!-- Compare mode: two cities, same cars, different lights. Hidden until "Compare" is picked. -->
+  <section class="compare" id="compare" hidden>
+    <header class="cmp-head">
+      <h1>Green Wave</h1>
+      <span class="cmp-tag">Compare</span>
+      <p>The same cars arrive on both maps. Only the lights differ, and they run themselves.</p>
+      <div class="spacer"></div>
+      <button class="secondary" id="compareExit">Exit compare</button>
+    </header>
+
+    <div class="cmp-sides">
+      <div class="cmp-side" data-side="a">
+        <div class="cmp-setup">
+          <span class="cmp-badge" aria-hidden="true">A</span>
+          <div class="segmented side-seg" role="group" aria-label="How map A runs its lights" data-side="a" data-setting="strategy">
+            <button data-value="smart">Smart</button><button data-value="timer">Timer</button><button data-value="wave">Green wave</button>
+          </div>
+          <div class="spacer"></div>
+          <span class="label">Left arrows</span>
+          <div class="segmented side-seg" role="group" aria-label="Map A left arrows" data-side="a" data-setting="arrows">
+            <button data-value="on">On</button><button data-value="off">Off</button>
+          </div>
+        </div>
+        <button class="cmp-pick phone-only" data-side="a" aria-controls="cmpSheet">
+          <span class="cmp-badge" aria-hidden="true">A</span>
+          <span class="cmp-pick-text"><span class="cmp-pick-name" data-name>Smart</span><span class="cmp-pick-sub" data-arrows>arrows on</span></span>
+          <svg aria-hidden="true" width="12" height="8" viewBox="0 0 12 8"><path d="M1 1 L6 6 L11 1"></path></svg>
+        </button>
+        <div class="cmp-map"><canvas aria-label="Map A"></canvas></div>
+        <div class="cmp-stats">
+          <div class="stat"><span class="label">Avg<span class="long"> wait</span> · last min</span><span class="value" data-stat="avg">–</span></div>
+          <div class="stat"><span class="label">Worst<span class="long"> wait</span> today</span><span class="value" data-stat="worst">–</span></div>
+          <div class="stat"><span class="label">Avg<span class="long"> wait</span> · today</span><span class="value" data-stat="today">–</span></div>
+          <span class="cmp-lead" data-stat="lead"></span>
+        </div>
+      </div>
+
+      <div class="cmp-side" data-side="b">
+        <div class="cmp-setup">
+          <span class="cmp-badge" aria-hidden="true">B</span>
+          <div class="segmented side-seg" role="group" aria-label="How map B runs its lights" data-side="b" data-setting="strategy">
+            <button data-value="smart">Smart</button><button data-value="timer">Timer</button><button data-value="wave">Green wave</button>
+          </div>
+          <div class="spacer"></div>
+          <span class="label">Left arrows</span>
+          <div class="segmented side-seg" role="group" aria-label="Map B left arrows" data-side="b" data-setting="arrows">
+            <button data-value="on">On</button><button data-value="off">Off</button>
+          </div>
+        </div>
+        <button class="cmp-pick phone-only" data-side="b" aria-controls="cmpSheet">
+          <span class="cmp-badge" aria-hidden="true">B</span>
+          <span class="cmp-pick-text"><span class="cmp-pick-name" data-name>Green wave</span><span class="cmp-pick-sub" data-arrows>arrows on</span></span>
+          <svg aria-hidden="true" width="12" height="8" viewBox="0 0 12 8"><path d="M1 1 L6 6 L11 1"></path></svg>
+        </button>
+        <div class="cmp-map"><canvas aria-label="Map B"></canvas></div>
+        <div class="cmp-stats">
+          <div class="stat"><span class="label">Avg<span class="long"> wait</span> · last min</span><span class="value" data-stat="avg">–</span></div>
+          <div class="stat"><span class="label">Worst<span class="long"> wait</span> today</span><span class="value" data-stat="worst">–</span></div>
+          <div class="stat"><span class="label">Avg<span class="long"> wait</span> · today</span><span class="value" data-stat="today">–</span></div>
+          <span class="cmp-lead" data-stat="lead"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="cmpToast" hidden></div>
+
+    <footer class="strip cmp-strip">
+      <div class="strip-row">
+        <div class="stat">
+          <span class="label">Time of day</span>
+          <span class="value-row"><span class="value small" id="cmpClock">6:30 AM</span><span class="sub" id="cmpPhase">early morning</span></span>
+          <div class="day-bar" aria-hidden="true">
+            <span class="rush" style="left: 29%; width: 10%"></span>
+            <span class="rush" style="left: 67%; width: 12%"></span>
+            <span class="now" id="cmpMarker"></span>
+          </div>
+        </div>
+        <div class="cmp-chart">
+          <span class="label">Avg wait, last few minutes</span>
+          <div class="cmp-chart-row">
+            <svg id="cmpChart" viewBox="0 0 260 44" preserveAspectRatio="none" role="img" aria-label="Average wait on map A and map B over the last few minutes">
+              <polyline class="line-a" id="cmpLineA" points=""></polyline>
+              <polyline class="line-b" id="cmpLineB" points=""></polyline>
+            </svg>
+            <div class="cmp-legend">
+              <span><svg aria-hidden="true" width="22" height="4"><line class="line-a" x1="0" y1="2" x2="22" y2="2"></line></svg><span id="cmpLegendA">A · Smart</span></span>
+              <span><svg aria-hidden="true" width="22" height="4"><line class="line-b" x1="0" y1="2" x2="22" y2="2"></line></svg><span id="cmpLegendB">B · Green wave</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+
+        <!-- Shared settings; on phones this becomes the pull-up sheet, with each map's lights added. -->
+        <div class="cmp-controls controls" id="cmpSheet">
+          <div class="sheet-head phone-only">
+            <span>Controls</span>
+            <button class="sheet-close" id="cmpControlsClose" aria-label="Close controls">×</button>
+          </div>
+          <div class="control phone-only">
+            <span class="label" id="cmpALabel">Map A lights</span>
+            <div class="segmented side-seg" role="group" aria-labelledby="cmpALabel" data-side="a" data-setting="strategy">
+              <button data-value="smart">Smart</button><button data-value="timer">Timer</button><button data-value="wave">Green wave</button>
+            </div>
+          </div>
+          <div class="control phone-only">
+            <span class="label" id="cmpAArrowsLabel">Map A arrows</span>
+            <div class="segmented side-seg" role="group" aria-labelledby="cmpAArrowsLabel" data-side="a" data-setting="arrows">
+              <button data-value="on">On</button><button data-value="off">Off</button>
+            </div>
+          </div>
+          <div class="control phone-only">
+            <span class="label" id="cmpBLabel">Map B lights</span>
+            <div class="segmented side-seg" role="group" aria-labelledby="cmpBLabel" data-side="b" data-setting="strategy">
+              <button data-value="smart">Smart</button><button data-value="timer">Timer</button><button data-value="wave">Green wave</button>
+            </div>
+          </div>
+          <div class="control phone-only">
+            <span class="label" id="cmpBArrowsLabel">Map B arrows</span>
+            <div class="segmented side-seg" role="group" aria-labelledby="cmpBArrowsLabel" data-side="b" data-setting="arrows">
+              <button data-value="on">On</button><button data-value="off">Off</button>
+            </div>
+          </div>
+          <div class="control">
+            <span class="label" id="cmpLayoutLabel">Lights (both)</span>
+            <div class="segmented" role="group" aria-labelledby="cmpLayoutLabel" id="cmpLayoutButtons">
+              <button data-value="1">1</button><button data-value="2">2</button><button data-value="4">4</button><button data-value="6">6</button>
+            </div>
+          </div>
+          <div class="control">
+            <span class="label" id="cmpSpeedLabel">Speed</span>
+            <div class="segmented" role="group" aria-labelledby="cmpSpeedLabel" id="cmpSpeedButtons">
+              <button data-value="1">1×</button><button data-value="2">2×</button><button data-value="4">4×</button>
+            </div>
+          </div>
+          <div class="control">
+            <label class="label" for="cmpTraffic">City traffic</label>
+            <input type="range" id="cmpTraffic" min="0" max="100" value="45">
+            <span class="sub" id="cmpTrafficName">normal</span>
+          </div>
+          <p class="strategy-note phone-only">Changing a map's lights or the number of lights restarts both maps, so the race stays fair.</p>
+        </div>
+
+        <button class="pause" id="cmpPause" aria-label="Pause">
+          <svg class="icon-pause" aria-hidden="true" width="16" height="18" viewBox="0 0 16 18"><rect x="1" y="1" width="5" height="16" rx="1"></rect><rect x="10" y="1" width="5" height="16" rx="1"></rect></svg>
+          <svg class="icon-play" aria-hidden="true" width="16" height="18" viewBox="0 0 16 18"><path d="M2 1.5v15l13-7.5z"></path></svg>
+        </button>
+        <button class="secondary phone-only cmp-phone-btn" id="cmpControlsOpen" aria-controls="cmpSheet" aria-expanded="false">Controls</button>
+        <button class="secondary phone-only cmp-phone-btn" id="cmpExitPhone">Exit compare</button>
+      </div>
+    </footer>
+  </section>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 </main>
-<script src="sim.js?v=0.8.4"></script>
-<script src="game.js?v=0.8.4"></script>
+<script src="sim.js?v=0.9.0"></script>
+<script src="game.js?v=0.9.0"></script>
 </body>
 </html>

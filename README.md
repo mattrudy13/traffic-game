@@ -10,6 +10,8 @@ more cars waiting.
   (1×/2×/4×) and how busy the city is. Click any light to switch it yourself; the strategy leaves
   it alone for 8 seconds. The strip shows the average wait per trip and a chart of it. Settings
   are remembered.
+- **Compare:** two copies of the city side by side, each running its own lights (Smart, Timer
+  or Green wave, arrows on or off), with exactly the same cars arriving on both. See below.
 - **Challenge:** the lights are all yours. If a queue backs up off the edge of the map, it's
   gridlock and the game ends. New roads open over time and traffic gets heavier.
 
@@ -30,6 +32,7 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 - `tune.js`: a bot that plays many challenge games in Node so the difficulty can be checked: `node tune.js`.
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
 - `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes): `node overlap-test.js`.
+- `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
 
 ## How the cars move
 
@@ -92,9 +95,36 @@ you can watch the average-wait chart move.
   east it is, by the time a car needs to drive there. Eastbound groups hit green after green.
   At rush hour on 6 lights it beats Smart (about 5 s vs 6.5 s average wait).
 
+## Compare mode
+
+**Compare setups** (in the controls; on phones, in the Controls sheet) opens two maps side by side:
+map A in blue and map B in orange, each with its own light strategy and left-arrow switch. The
+number of lights, speed and traffic are shared. The lights run themselves and can't be clicked, so
+neither side gets a human's help. On a phone held upright both maps are turned, side by side.
+
+Under each map: the average wait over the last minute, the worst single trip today and the average
+for today, plus which map is ahead on today's average (once both have 20 trips). "Today" starts
+again at midnight. The chart draws both maps' last-minute average on one scale (A solid, B dashed).
+
+**Same cars on both maps.** Both cities are built from one seed and step forward together with the
+same time steps. Each lane draws its arrival times from its own random stream, and each car its
+turns from its own stream (keyed by lane and arrival number), so the 12th car on a lane arrives at
+the same moment and wants the same turns in both cities. A single shared stream wouldn't do: Timer
+lights draw extra random numbers for their offsets, which would shift every car after them.
+`compare-test.js` checks arrivals and first turns match exactly.
+
+**Changing a map's lights, or the number of lights, restarts both maps** from empty roads at the
+same time of day, with new cars. Switching one city mid-run would leave it with the other
+setup's queues, which isn't a fair race. Traffic and speed change both live.
+
+One thing the numbers leave out (in every mode): when a lane is backed up to the edge, new arrivals
+wait off the map and that waiting isn't counted, and in chill mode arrivals past 4 waiting are
+dropped. At normal traffic this rarely happens; at very busy it can flatter the more jammed map.
+
 ## Testing
 
 `index.html?hour=21` starts the day at 9 PM, handy for checking the night look.
+`index.html?compare` opens compare mode straight away.
 
 ## Tuning
 
