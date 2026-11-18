@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=0.10.0">
+<link rel="stylesheet" href="style.css?v=0.11.0">
 </head>
 <body class="mode-chill">
 <main class="game">
@@ -114,6 +114,7 @@
       <div class="tabs" role="tablist" aria-label="Controls" id="controlTabs">
         <button role="tab" id="tabLights" aria-controls="panelLights" aria-selected="true" data-tab="lights">Lights</button>
         <button role="tab" id="tabTraffic" aria-controls="panelTraffic" aria-selected="false" data-tab="traffic" tabindex="-1">Traffic</button>
+        <button role="tab" id="tabExtras" aria-controls="panelExtras" aria-selected="false" data-tab="extras" tabindex="-1">Weather &amp; extras</button>
         <!-- Speed sits outside the tabs so it is always one click away. -->
         <div class="control desktop-only tabs-speed">
           <span class="label" id="speedLabel">Speed</span>
@@ -167,6 +168,23 @@
           </div>
         </div>
         <p class="strategy-note" id="kindNote"></p>
+      </div>
+
+      <div class="tab-panel" role="tabpanel" id="panelExtras" aria-labelledby="tabExtras" data-tab="extras" hidden>
+        <div class="control kind-control">
+          <span class="label" id="weatherLabel">Weather</span>
+          <div class="segmented weather-seg" role="group" aria-labelledby="weatherLabel" id="weatherButtons">
+            <button data-value="clear">Clear</button><button data-value="rain">Rain</button><button data-value="snow">Snow</button><button data-value="changing">Changing</button>
+          </div>
+        </div>
+        <div class="control">
+          <span class="label" id="busLabel">Buses</span>
+          <div class="segmented" role="group" aria-labelledby="busLabel" id="busButtons">
+            <button data-value="on">On</button><button data-value="off">Off</button>
+          </div>
+        </div>
+        <button class="secondary" id="ambulanceButton">Send ambulance</button>
+        <p class="strategy-note" id="extrasNote">Rain slows cars a little and snow a lot. Buses stop mid-block and cars pass them. An ambulance crosses now and then by itself; lights ahead of it turn green.</p>
       </div>
 
       <button class="secondary phone-only" id="sheetCompare">Compare two light setups</button>
@@ -308,6 +326,19 @@
               <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction">Construction</button>
             </div>
           </div>
+          <div class="control kind-control">
+            <span class="label" id="cmpWeatherLabel">Weather</span>
+            <div class="segmented weather-seg" role="group" aria-labelledby="cmpWeatherLabel" id="cmpWeatherButtons">
+              <button data-value="clear">Clear</button><button data-value="rain">Rain</button><button data-value="snow">Snow</button><button data-value="changing">Changing</button>
+            </div>
+          </div>
+          <div class="control">
+            <span class="label" id="cmpBusLabel">Buses</span>
+            <div class="segmented" role="group" aria-labelledby="cmpBusLabel" id="cmpBusButtons">
+              <button data-value="on">On</button><button data-value="off">Off</button>
+            </div>
+          </div>
+          <button class="secondary" id="cmpAmbulance">Send ambulance</button>
           <div class="control">
             <span class="label" id="cmpSpeedLabel">Speed</span>
             <div class="segmented" role="group" aria-labelledby="cmpSpeedLabel" id="cmpSpeedButtons">
@@ -333,7 +364,7 @@
   </section>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 </main>
-<script src="sim.js?v=0.10.0"></script>
-<script src="game.js?v=0.10.0"></script>
+<script src="sim.js?v=0.11.0"></script>
+<script src="game.js?v=0.11.0"></script>
 </body>
 </html>

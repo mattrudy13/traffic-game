@@ -17,7 +17,8 @@
     paper: '#f5f1e8', ink: '#22252b', muted: '#4f525a', track: '#e2dccf', rush: '#e0b15a',
     spark: '#c47a12', danger: '#b3262b', median: '#d9d1c0',
     sideA: '#24539a', sideAInk: '#f5f1e8', sideB: '#c47a12', sideBInk: '#22252b',
-    stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00'
+    stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00',
+    rainInk: '#3460a0', snowEdge: '#ffffff'
   };
   var NIGHT = {
     map: '#3b362e', grid: '#453f36', road: '#1c1b19', dash: '#5a554c', car: '#f4ead6',
@@ -25,7 +26,8 @@
     paper: '#2b2722', ink: '#f1e9da', muted: '#b5aa96', track: '#463f36', rush: '#c48a35',
     spark: '#ffd166', danger: '#ff8a80', median: '#4d473c',
     sideA: '#8fb3ea', sideAInk: '#2b2722', sideB: '#ffb547', sideBInk: '#2b2722',
-    stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d'
+    stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d',
+    rainInk: '#aac8f0', snowEdge: '#e8e4dc'
   };
   var CSS_VARS = ['map', 'paper', 'ink', 'muted', 'track', 'rush', 'spark', 'danger', 'sideA', 'sideAInk', 'sideB', 'sideBInk'];
   // CSS custom property names for the palette keys (sideA -> --side-a).
@@ -50,6 +52,17 @@
   var START_HOUR = Number(new URLSearchParams(location.search).get('hour'));
 
   var STRATEGY_NAMES = { smart: 'Smart', timer: 'Timer', wave: 'Green wave' };
+  var BUS_WINDOWS = 5;
+  var AMBULANCE_RED = '#e5484d', AMBULANCE_BLUE = '#2f6fe0';
+  var WEATHER_FADE = 0.5;     // weather fades in or out at this much per real second
+  // Fixed scatter of rain streaks and snowflakes (positions as fractions of the view, plus a
+  // per-drop speed), so the weather looks random but costs nothing to work out each frame.
+  var DROPS = (function () {
+    var seed = 12345, out = [];
+    function r() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var i = 0; i < 220; i++) out.push({ x: r(), y: r(), k: 0.7 + r() * 0.6, size: r() });
+    return out;
+  })();
   var KIND_NAMES = { normal: 'Normal', commute: 'Commute', stadium: 'Stadium', sunday: 'Sunday', construction: 'Construction' };
   var KIND_NOTES = {
     normal: 'Normal: two rush hours; some streets are busier than others.',
@@ -83,6 +96,8 @@
     traffic: $('traffic'), trafficName: $('trafficName'),
     sheetSpeedButtons: $('sheetSpeedButtons'), kindButtons: $('kindButtons'), kindNote: $('kindNote'),
     controlTabs: $('controlTabs'), cmpKindButtons: $('cmpKindButtons'),
+    weatherButtons: $('weatherButtons'), busButtons: $('busButtons'), ambulanceButton: $('ambulanceButton'),
+    cmpWeatherButtons: $('cmpWeatherButtons'), cmpBusButtons: $('cmpBusButtons'), cmpAmbulance: $('cmpAmbulance'),
     compareButton: $('compareButton'), sheetCompare: $('sheetCompare'),
     compare: $('compare'), compareExit: $('compareExit'), cmpExitPhone: $('cmpExitPhone'), cmpPause: $('cmpPause'),
     cmpClock: $('cmpClock'), cmpPhase: $('cmpPhase'), cmpMarker: $('cmpMarker'),
@@ -104,6 +119,7 @@
   var chart = [], nextSample = 0;
   var drawn = game;            // the city the drawing functions are drawing right now
   var drawRotated = false;     // ...and whether that view is turned (labels are turned back upright)
+  var drawView = mainView;     // ...and the view itself (weather is drawn in screen space)
 
   // The main map, and the two compare maps. Each has its own canvas, scale and turn.
   var mainView = { canvas: canvas, ctx: ctx, box: mapEl, border: 0, scale: 1, rotated: false };
@@ -234,6 +250,7 @@
     ctx = view.ctx;
     drawn = city;
     drawRotated = view.rotated;
+    drawView = view;
     draw(darkness, nowMs);
   }
 
@@ -241,9 +258,14 @@
     ctx.fillStyle = palette.map;
     ctx.fillRect(0, 0, W, H);
     drawGrid();
+    var wx = weatherMix(nowMs);
+    if (wx.rain + wx.snow > 0) drawWeatherTint(wx, darkness);
     if (drawn.stadium) drawStadium();
     drawRoads();
+    if (wx.rain > 0) drawWetRoads(wx.rain);
+    if (wx.snow > 0) drawSnowyEdges(wx.snow);
     if (drawn.construction) drawConstruction();
+    if (drawn.buses) drawBusStops();
     if (darkness > 0) drawStreetlights(darkness);
     var queues = kind === 'challenge' ? Sim.edgeQueues(drawn) : null;
     if (queues) drawDanger(queues);
@@ -252,6 +274,123 @@
     drawCars(nowMs);
     drawLights(darkness);
     if (queues) drawOffMapBadges(queues);
+    if (wx.rain > 0) drawRain(wx.rain, nowMs);
+    if (wx.snow > 0) drawSnow(wx.snow, nowMs);
+  }
+
+  // ---- weather
+
+  // How much rain and snow to draw (0..1 each), fading toward the city's current weather so
+  // "changing" weather drifts in rather than snapping. Kept on the city, since each compare map draws its own.
+  function weatherMix(nowMs) {
+    if (kind === 'challenge') return { rain: 0, snow: 0 };
+    var now = Sim.currentWeather(drawn), m = drawn.drawWeather;
+    if (!m) m = drawn.drawWeather = { rain: now === 'rain' ? 1 : 0, snow: now === 'snow' ? 1 : 0, at: nowMs };
+    var step = Math.min(1, (nowMs - m.at) / 1000 * WEATHER_FADE);
+    m.at = nowMs;
+    m.rain += Math.max(-step, Math.min(step, (now === 'rain' ? 1 : 0) - m.rain));
+    m.snow += Math.max(-step, Math.min(step, (now === 'snow' ? 1 : 0) - m.snow));
+    return m;
+  }
+
+  // A cool grey wash for rain, a whiter map for snow.
+  function drawWeatherTint(wx, darkness) {
+    if (wx.rain > 0) {
+      ctx.fillStyle = 'rgba(56, 84, 124, ' + (0.07 * wx.rain) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (wx.snow > 0) {
+      ctx.fillStyle = 'rgba(255, 255, 255, ' + (0.35 * wx.snow * (1 - 0.6 * darkness)) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // Wet roads: faint light stripes along each road, like a sheen.
+  function drawWetRoads(amount) {
+    ctx.fillStyle = 'rgba(160, 190, 230, ' + (0.16 * amount) + ')';
+    drawn.roads.forEach(function (r) {
+      [-0.45, 0.45].forEach(function (f) {
+        var c = r.c + f * r.half;
+        if (r.axis === 'v') ctx.fillRect(c - 1.5, 0, 3, H);
+        else ctx.fillRect(0, c - 1.5, W, 3);
+      });
+    });
+  }
+
+  // Snow piled along the road edges.
+  function drawSnowyEdges(amount) {
+    ctx.globalAlpha = amount;
+    ctx.fillStyle = palette.snowEdge;
+    drawn.roads.forEach(function (r) {
+      if (r.axis === 'v') { ctx.fillRect(r.c - r.half, 0, 4, H); ctx.fillRect(r.c + r.half - 4, 0, 4, H); }
+      else { ctx.fillRect(0, r.c - r.half, W, 4); ctx.fillRect(0, r.c + r.half - 4, W, 4); }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // Rain and snow fall down the screen, so they're drawn in screen space (a turned phone map
+  // would otherwise have rain falling sideways). They move with real time, not game speed.
+  function inScreenSpace(fn) {
+    var dpr = window.devicePixelRatio || 1;
+    var sw = drawView.canvas.width / dpr, sh = drawView.canvas.height / dpr;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fn(sw, sh, Math.min(1, sw * sh / (W * H * 0.5)));
+    ctx.restore();
+  }
+
+  function drawRain(amount, nowMs) {
+    inScreenSpace(function (sw, sh, density) {
+      var t = nowMs / 1000, n = Math.round(DROPS.length * Math.max(0.3, density) * 0.75);
+      ctx.strokeStyle = palette.rainInk;
+      ctx.globalAlpha = 0.5 * amount;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var d = DROPS[i], len = 10 + d.size * 8;
+        var y = ((d.y * (sh + 40) + t * 520 * d.k) % (sh + 40)) - 20;
+        var x = ((d.x * (sw + 40) + y * 0.32) % (sw + 40)) - 20;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + len * 0.32, y + len);
+      }
+      ctx.stroke();
+    });
+  }
+
+  function drawSnow(amount, nowMs) {
+    inScreenSpace(function (sw, sh, density) {
+      var t = nowMs / 1000, n = Math.round(DROPS.length * Math.max(0.3, density) * 0.6);
+      ctx.globalAlpha = amount;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = 'rgba(80, 96, 120, 0.35)';
+      ctx.lineWidth = 1;
+      for (var i = 0; i < n; i++) {
+        var d = DROPS[i];
+        var y = ((d.y * (sh + 20) + t * 34 * d.k) % (sh + 20)) - 10;
+        var x = d.x * sw + Math.sin(t * 0.9 + i) * 6;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.6 + d.size * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    });
+  }
+
+  // ---- buses
+
+  // A small ink square on the pavement beside each bus stop.
+  function drawBusStops() {
+    ctx.fillStyle = palette.ink;
+    drawn.lanes.forEach(function (lane) {
+      (lane.busStops || []).forEach(function (at) {
+        var p = lanePoint(lane, at - 26);
+        var out = lane.width / 2 + 11;
+        var x = p.x, y = p.y;
+        if (lane.dir === 'E') y += out; else if (lane.dir === 'W') y -= out;
+        else if (lane.dir === 'S') x -= out; else x += out;
+        roundRect(x - 6, y - 6, 12, 12, 2);
+      });
+    });
   }
 
   function drawGrid() {
@@ -450,10 +589,13 @@
     var blinkOn = Math.floor(nowMs / SIGNAL_BLINK_MS) % 2 === 0;
     drawn.lanes.forEach(function (lane) {
       lane.cars.forEach(function (car) {
+        if (car.bus || car.ambulance) { drawSpecial(lane, car, nowMs); return; }
         var c = Sim.carPoint(lane, car, len / 2);
         ctx.save();
         ctx.translate(c.x, c.y);
         ctx.rotate(c.angle);
+        // On a one-lane street, cars ahead of an ambulance ease toward the curb (driver's right).
+        if (car.aside && !lane.sibling) ctx.translate(0, 5);
         ctx.fillStyle = car.wait >= WAIT_ORANGE ? FED_UP_COLOR : car.wait >= WAIT_YELLOW ? WAIT_COLOR : palette.car;
         roundRect(-len / 2, -w / 2, len, w, w / 2);
         var signal = blinkOn && Sim.signal(lane, car, SIGNAL_FROM);
@@ -470,6 +612,42 @@
         ctx.restore();
       });
     });
+  }
+
+  // Buses: a long white capsule with an ink outline and windows. Ambulances: white with a red
+  // cross, red and blue lights flashing at the front, and a soft red glow.
+  function drawSpecial(lane, car, nowMs) {
+    var len = car.len, w = car.bus ? 14 : 13;
+    var c = Sim.carPoint(lane, car, len / 2);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.angle);
+    if (car.ambulance) {
+      var glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 36);
+      glow.addColorStop(0, 'rgba(229, 72, 77, 0.35)');
+      glow.addColorStop(1, 'rgba(229, 72, 77, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(-36, -36, 72, 72);
+    }
+    ctx.fillStyle = palette.car;
+    roundRect(-len / 2, -w / 2, len, w, w / 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#22252b';
+    ctx.stroke();
+    if (car.bus) {
+      ctx.fillStyle = '#22252b';
+      for (var k = 0; k < BUS_WINDOWS; k++) ctx.fillRect(-len / 2 + 7 + k * 8, -3, 5, 6);
+    } else {
+      ctx.fillStyle = AMBULANCE_RED;
+      ctx.fillRect(-5, -1.5, 8, 3);
+      ctx.fillRect(-2.5, -4, 3, 8);
+      var on = Math.floor(nowMs / 250) % 2 === 0;
+      ctx.fillStyle = on ? AMBULANCE_RED : AMBULANCE_BLUE;
+      ctx.beginPath(); ctx.arc(len / 2 - 5, -4, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = on ? AMBULANCE_BLUE : AMBULANCE_RED;
+      ctx.beginPath(); ctx.arc(len / 2 - 5, 4, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
   }
 
   function drawLights(darkness) {
@@ -575,10 +753,16 @@
     else updateChallengeStrip();
   }
 
+  // "morning rush", or the traffic kind's note ("game letting out"), plus the weather if any.
+  function phaseText(city, hour) {
+    var text = Sim.kindNote(city) || Sim.dayPhase(hour), weather = Sim.currentWeather(city);
+    return weather === 'clear' ? text : text + ' · ' + weather;
+  }
+
   function updateChillStrip() {
     var hour = Sim.hourOfDay(game);
     setText(ui.dayClock, formatHour(hour));
-    setText(ui.dayPhase, Sim.kindNote(game) || Sim.dayPhase(hour));
+    setText(ui.dayPhase, phaseText(game, hour));
     ui.dayMarker.style.left = (hour / 24 * 100).toFixed(2) + '%';
     var wait = Sim.averageWait(game);
     setText(ui.avgWait, wait === null ? '–' : wait.toFixed(1) + 's');
@@ -647,7 +831,7 @@
   function updateCompareStrip() {
     var hour = Sim.hourOfDay(cmp.a);
     setText(ui.cmpClock, formatHour(hour));
-    setText(ui.cmpPhase, Sim.kindNote(cmp.a) || Sim.dayPhase(hour));
+    setText(ui.cmpPhase, phaseText(cmp.a, hour));
     ui.cmpMarker.style.left = (hour / 24 * 100).toFixed(2) + '%';
 
     // Who is ahead goes by today's average, which settles down; the last minute jumps around.
@@ -700,7 +884,8 @@
 
   // Chill settings are remembered per browser so the city comes back the way you left it.
   function loadPrefs() {
-    var p = { lights: 4, traffic: 45, strategy: 'smart', speed: 1, arrows: true, compare: null, kind: 'normal', tab: 'lights' };
+    var p = { lights: 4, traffic: 45, strategy: 'smart', speed: 1, arrows: true, compare: null, kind: 'normal', tab: 'lights',
+      weather: 'clear', buses: true };
     try {
       var saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
       if ([1, 2, 4, 6].indexOf(saved.lights) >= 0) p.lights = saved.lights;
@@ -709,7 +894,9 @@
       if ([1, 2, 4].indexOf(saved.speed) >= 0) p.speed = saved.speed;
       if (typeof saved.arrows === 'boolean') p.arrows = saved.arrows;
       if (KIND_NAMES[saved.kind]) p.kind = saved.kind;
-      if (saved.tab === 'lights' || saved.tab === 'traffic') p.tab = saved.tab;
+      if (['lights', 'traffic', 'extras'].indexOf(saved.tab) >= 0) p.tab = saved.tab;
+      if (['clear', 'rain', 'snow', 'changing'].indexOf(saved.weather) >= 0) p.weather = saved.weather;
+      if (typeof saved.buses === 'boolean') p.buses = saved.buses;
       var c = saved.compare;
       if (c && c.a && c.b && STRATEGY_NOTES[c.a.strategy] && STRATEGY_NOTES[c.b.strategy]) {
         p.compare = {
@@ -736,7 +923,7 @@
 
   // `hour` (optional) starts the day at that time, so leaving compare mode carries on the same day.
   function newChillGame(hour) {
-    var options = { strategy: prefs.strategy, arrows: prefs.arrows, kind: prefs.kind };
+    var options = { strategy: prefs.strategy, arrows: prefs.arrows, kind: prefs.kind, weather: prefs.weather, buses: prefs.buses, ambulances: true };
     if (START_HOUR >= 0 && START_HOUR < 24 && location.search.indexOf('hour=') >= 0) options.dayStartHour = START_HOUR;
     if (hour !== undefined) options.dayStartHour = hour;
     return Sim.createChill(prefs.lights, trafficRate(prefs.traffic), options);
@@ -748,7 +935,8 @@
     ['a', 'b'].forEach(function (side) {
       var setup = prefs.compare[side];
       cmp[side] = Sim.createChill(prefs.lights, trafficRate(prefs.traffic),
-        { seed: seed, strategy: setup.strategy, arrows: setup.arrows, kind: prefs.kind, dayStartHour: hour });
+        { seed: seed, strategy: setup.strategy, arrows: setup.arrows, kind: prefs.kind, weather: prefs.weather,
+          buses: prefs.buses, ambulances: true, dayStartHour: hour });
     });
     cmp.chartA = [];
     cmp.chartB = [];
@@ -776,6 +964,8 @@
     markPressed(ui.cmpLayoutButtons, prefs.lights);
     markPressed(ui.cmpSpeedButtons, prefs.speed);
     markPressed(ui.cmpKindButtons, prefs.kind);
+    markPressed(ui.cmpWeatherButtons, prefs.weather);
+    markPressed(ui.cmpBusButtons, prefs.buses ? 'on' : 'off');
     ui.cmpTraffic.value = String(prefs.traffic);
     ui.cmpTrafficName.textContent = trafficName(prefs.traffic);
   }
@@ -795,6 +985,8 @@
     markPressed(ui.sheetSpeedButtons, prefs.speed);
     markPressed(ui.arrowButtons, prefs.arrows ? 'on' : 'off');
     markPressed(ui.kindButtons, prefs.kind);
+    markPressed(ui.weatherButtons, prefs.weather);
+    markPressed(ui.busButtons, prefs.buses ? 'on' : 'off');
     ui.strategyNote.textContent = STRATEGY_NOTES[prefs.strategy];
     ui.kindNote.textContent = KIND_NOTES[prefs.kind];
     showTab(prefs.tab);
@@ -1004,6 +1196,8 @@
       if (hour < cmp.lastHour) { Sim.resetTally(cmp.a); Sim.resetTally(cmp.b); }
       cmp.lastHour = hour;
       sampleCompareChart();
+      cmp.a.events.length = 0;    // nothing to announce in compare mode (ambulances toast on the button)
+      cmp.b.events.length = 0;
     }
     var darkness = currentDarkness();
     updatePalette(darkness);
@@ -1092,6 +1286,20 @@
     prefs.kind = value;
     game = newChillGame();
     resetChart();
+  });
+
+  // Weather and buses change the running city (both maps in compare mode); no restart.
+  onSegment(ui.weatherButtons, function (value) {
+    prefs.weather = value;
+    Sim.setWeather(game, value);
+  });
+  onSegment(ui.busButtons, function (value) {
+    prefs.buses = value === 'on';
+    Sim.setBuses(game, prefs.buses);
+  });
+  ui.ambulanceButton.addEventListener('click', function () {
+    Sim.sendAmbulance(game, Math.random());
+    showToast('Ambulance on its way');
   });
 
   ui.controlTabs.addEventListener('click', function (e) {
@@ -1193,6 +1401,24 @@
     prefs.kind = value;
     startCompare(cfg.dayStartHour);
     showToast('New day on both maps: ' + KIND_NAMES[value]);
+  });
+
+  onCompareSegment(ui.cmpWeatherButtons, function (value) {
+    prefs.weather = value;
+    Sim.setWeather(cmp.a, value);
+    Sim.setWeather(cmp.b, value);
+  });
+  onCompareSegment(ui.cmpBusButtons, function (value) {
+    prefs.buses = value === 'on';
+    Sim.setBuses(cmp.a, prefs.buses);
+    Sim.setBuses(cmp.b, prefs.buses);
+  });
+  // The same pick on both maps, so the same road gets the ambulance on each.
+  ui.cmpAmbulance.addEventListener('click', function () {
+    var pick = Math.random();
+    Sim.sendAmbulance(cmp.a, pick);
+    Sim.sendAmbulance(cmp.b, pick);
+    showToast('Ambulance on its way on both maps');
   });
 
   onCompareSegment(ui.cmpSpeedButtons, function (value) {

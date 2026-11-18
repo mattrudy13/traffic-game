@@ -6,9 +6,10 @@ more cars waiting.
 
 - **Chill (default):** nothing to lose. A day passes every 6 minutes (at 1×), with a morning
   and evening rush hour and a quiet night when the map dims to lamplight and cars get headlights.
-  The controls sit in two tabs: **Lights** (1, 2, 4 or 6 lights, how they decide: Smart, Timer or
-  Green wave, and left arrows) and **Traffic** (how busy the city is, and what kind of day it is:
-  see Traffic kinds). Speed (1×/2×/4×) stays beside the tabs. Click any light to switch it yourself; the strategy leaves
+  The controls sit in three tabs: **Lights** (1, 2, 4 or 6 lights, how they decide: Smart, Timer or
+  Green wave, and left arrows), **Traffic** (how busy the city is, and what kind of day it is:
+  see Traffic kinds) and **Weather & extras** (weather, buses, send an ambulance: see below).
+  Speed (1×/2×/4×) stays beside the tabs. Click any light to switch it yourself; the strategy leaves
   it alone for 8 seconds. The strip shows the average wait per trip and a chart of it. Settings
   are remembered.
 - **Compare:** two copies of the city side by side, each running its own lights (Smart, Timer
@@ -34,6 +35,7 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
 - `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes): `node overlap-test.js`.
 - `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
+- `extras-test.js`: runs weather, buses and ambulances on every layout and strategy and checks nothing gridlocks, buses stop and get through, every ambulance crosses, and compare maps still match: `node extras-test.js`.
 - `kinds-test.js`: runs every traffic kind on every layout and checks nothing gridlocks, no car drives on the closed lane, and the stadium crowd shows up: `node kinds-test.js`.
 
 ## How the cars move
@@ -118,6 +120,32 @@ compare mode, where it is shared so the race stays fair).
 Arrivals follow the rate as it changes. Each lane counts down in "expected arrivals" (rate × time)
 rather than seconds, so a long late-night gap can't hold back the stadium crowd, and moving the
 traffic slider takes effect at once.
+
+## Weather, buses and ambulances
+
+The **Weather & extras** tab. In compare mode these are shared, so both maps get the same weather,
+buses and ambulances.
+
+- **Weather:** Clear, Rain, Snow, or Changing (a new pick every 4 game hours: about half clear,
+  a third rain, the rest snow). Rain means top speeds 85%, acceleration 85% and brakes 75%;
+  snow 70%, 65% and 55%. Weaker brakes alone make moving cars keep bigger gaps (the safe-speed
+  rule leaves more room). The gap between *stopped* cars stays the same on purpose: the "don't
+  block the box" spaces are counted from it, and changing it could strand a car in a box. Rain
+  falls as streaks with a sheen on the roads; snow falls as flakes and piles along the road edges.
+  Both fall down the screen, even on a turned phone map.
+- **Buses** (on by default): one every 40 s each way in each avenue's curb lane. They stop for
+  4 s mid-block (the ink squares beside the road are the stops) and cars move over to pass. A bus is
+  two cars long, so it takes two spaces in the "don't block the box" count; as one it could squeeze
+  into a gap it doesn't fit and get stuck in an intersection. Buses never turn and never change lanes,
+  and none run in a closed lane.
+- **Ambulances:** one every 45 s or so by itself, or press **Send ambulance**. It goes straight
+  across in an avenue's inner lane or a side street, 25% faster than traffic. Within 260 px of a
+  light, the light turns green for it and stays green until it's through. Amber, all-red and "don't
+  block the box" still apply to everyone, so this can't cause gridlock. Cars just ahead move over on
+  an avenue, or ease toward the curb on a side street.
+
+Buses and ambulances aren't counted in the wait numbers or cars through. Their timetables come from
+the city's seed, so in compare mode they enter both maps at the same moments.
 
 ## Compare mode
 

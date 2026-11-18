@@ -427,6 +427,8 @@ body.phone .kind-seg { display: grid; grid-template-columns: repeat(3, minmax(0,
 body.phone .kind-seg button { margin-left: 0; padding: 0 4px; }
 body.phone .controls .control.kind-control { flex-direction: column; align-items: stretch; gap: 6px; }
 body.phone .controls .control.kind-control > .label { width: auto; }
+body.phone #ambulanceButton, body.phone #cmpAmbulance { justify-content: center; align-items: center; }
+body.phone .weather-seg button { padding: 0 2px; font-size: 13px; }
 
 .sheet-backdrop {
   position: fixed;
@@ -531,6 +533,7 @@ body.phone .controls .control.kind-control > .label { width: auto; }
 /* On desktop the shared settings sit in the strip's row; on phones they become the sheet. */
 .cmp-controls { display: contents; }
 body:not(.phone) .cmp-strip .control { flex-direction: column; align-items: flex-start; gap: 4px; }
+#cmpAmbulance { min-height: 40px; }
 #cmpTraffic { width: 150px; margin: 0; accent-color: var(--ink); cursor: pointer; }
 
 /* Phones: the map pickers at the top open the sheet; both maps turn with the phone. */
