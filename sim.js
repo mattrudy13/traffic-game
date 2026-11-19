@@ -45,6 +45,7 @@
     autoCheckEvery: 0.5,
     autoMinGreen: 3,
     autoMaxGreen: 20,
+    smartRatio: 2,       // Smart: switch once the red side has this many times the green side's cars
     // Chill mode: a car queued off the map this many seconds gives up and drives off. Without it,
     // traffic above what the city can carry (about slider 60 on 6 lights) would build a queue that
     // grows every day forever, since the night is too short to clear it.
@@ -1309,15 +1310,17 @@
 
   // ---------------------------------------------------------------- self-running lights
 
-  // Cars stopped (or nearly) within 160 px before each light, counted per light and direction.
+  // Cars within 160 px before each light, per light and direction: `ns`/`ew` count the ones stopped
+  // (or nearly), `nsAll`/`ewAll` every car there, moving or not.
   function waitingCounts(g) {
     var counts = {};
-    g.lights.forEach(function (l) { counts[l.key] = { ns: 0, ew: 0 }; });
+    g.lights.forEach(function (l) { counts[l.key] = { ns: 0, ew: 0, nsAll: 0, ewAll: 0 }; });
     g.lanes.forEach(function (lane) {
       lane.stops.forEach(function (stop) {
         lane.cars.forEach(function (car) {
-          if (car.v < 20 && car.s <= stop.line + 0.5 && car.s > stop.line - 160) {
-            counts[stop.light.key][lane.axis]++;
+          if (car.s <= stop.line + 0.5 && car.s > stop.line - 160) {
+            if (car.v < 20) counts[stop.light.key][lane.axis]++;
+            counts[stop.light.key][lane.axis + 'All']++;
           }
         });
       });
@@ -1347,8 +1350,12 @@
         if (l.greenFor < cfg.autoMinGreen) return;
         var c = counts[l.key];
         var redSide = l.axis === 'ns' ? c.ew : c.ns;
-        var greenSide = c[l.axis];
-        if (redSide > greenSide || (redSide > 0 && l.greenFor >= cfg.autoMaxGreen)) flip(g, l);
+        // The green side counts every car still coming through, not just stopped ones: a flowing
+        // green has few stopped cars, so counting only those flipped it back after 3 s, and every
+        // switch costs 2.1 s of amber and all-red. Waiting for the red side to be well ahead (more
+        // than `smartRatio` times as many) lets a green finish its platoon.
+        var greenSide = c[l.axis + 'All'];
+        if (redSide > cfg.smartRatio * greenSide || (redSide > 0 && l.greenFor >= cfg.autoMaxGreen)) flip(g, l);
       } else {
         var t = (g.time + lead - l.offset) % cfg.cycleTime;
         if (t < 0) t += cfg.cycleTime;

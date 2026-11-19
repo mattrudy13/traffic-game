@@ -76,7 +76,7 @@
   var LEAD_MIN_TRIPS = 20;   // trips each map needs today before one is called ahead
 
   var STRATEGY_NOTES = {
-    smart: 'Smart: each light gives green to whichever side has more cars waiting.',
+    smart: 'Smart: each light lets the cars on green finish, then switches once clearly more are waiting on red.',
     timer: 'Timer: every light switches every 10 seconds, no matter who is waiting. Lights aren\'t coordinated.',
     wave: 'Green wave: lights turn green one after another from west to east, timed so cars heading east can cruise through.'
   };

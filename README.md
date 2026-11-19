@@ -85,7 +85,8 @@ green. Both directions turn at once; their curves bend early so they pass beside
 lights end the arrow once the queue has cleared (2 to 8 s); Timer and Green wave give it 4 s.
 After it, the normal green follows and lefts still go on gaps.
 
-The trade-off, measured over a game day: arrows cut the worst left-turn waits a lot (6 lights,
+The trade-off, measured over a game day (before time queued off the map was counted, so the
+numbers are low): arrows cut the worst left-turn waits a lot (6 lights,
 rush hour: longest 224 s down to 75 s, 90th percentile 71 s down to 48 s) but everyone else waits
 a few seconds longer on a typical trip. Triggering on any waiting left-turner instead of 6 s
 cost everyone much more. The **Left arrows On/Off** switch in the controls flips them live, so
@@ -93,11 +94,31 @@ you can watch the average-wait chart move.
 
 ## Light strategies
 
-- **Smart:** a light switches when more cars wait on the red side (green lasts 3–20 s).
+- **Smart:** a light switches once the cars stopped on the red side outnumber *every* car within
+  160 px of the green side (moving or not) by more than 2 to 1 (green lasts 3–20 s). An earlier
+  version compared stopped cars on both sides. A flowing green has few stopped cars, so it flipped
+  back after 3 s, and every switch costs 2.1 s of amber and all-red; at heavy traffic it ran short
+  greens and lost to Timer.
 - **Timer:** 10 s each way, every light on its own random offset.
 - **Green wave:** same 10 s / 10 s cycle, but each light's east-west green starts later the further
   east it is, by the time a car needs to drive there. Eastbound groups hit green after green.
-  At rush hour on 6 lights it beats Smart (about 5 s vs 6.5 s average wait).
+
+How they compare: average wait over a game day (time queued off the map and give-ups included),
+averaged over 3 seeds:
+
+| Setup | Smart | Timer | Green wave |
+|---|---|---|---|
+| 4 lights, slider 30 | **8.3 s** | 15.9 s | 15.3 s |
+| 4 lights, slider 45 (default) | **27.2 s** | 30.2 s | 29.3 s |
+| 4 lights, slider 60 | 48.9 s | **43.8 s** | 46.1 s |
+| 6 lights, slider 45 | **21.9 s** | 32.9 s | 27.4 s |
+| 6 lights, slider 75 | 59.7 s | 68.2 s | **59.1 s** |
+| 6 lights, slider 90 | 73.3 s | 80.1 s | **68.9 s** |
+| 1 light, slider 45 | **20.9 s** | 26.5 s | 28.8 s |
+| 2 lights, slider 60 | 35.4 s | **35.3 s** | 37.7 s |
+
+Smart wins at light and normal traffic. Once the city is overloaded, Green wave's coordination
+between lights wins on 6 lights, which Smart (each light deciding alone) can't match.
 
 ## Traffic kinds
 
