@@ -950,8 +950,8 @@
 
   // Slider value where, on a normal day with arrows on, drivers start giving up at rush hour
   // (the first value from which at least 2 of 3 seeded days had give-ups). Measured in steps
-  // of 5, so treat it as +-5. Smart overloads first: it holds a flowing green longer, so a
-  // busy side street can sit through more of the rush.
+  // of 5, so treat it as +-5. Smart overloads first: it compares raw car counts, and the
+  // avenue's 4 lanes outnumber the street's 2, so the street gets little green at rush hour.
   var CAPACITY = {
     1: { smart: 55, timer: 65, wave: 65 },
     2: { smart: 55, timer: 60, wave: 60 },

@@ -192,8 +192,20 @@ mode the first map to overload sets it. Other traffic kinds and weather aren't m
 | 4 lights | 55 | 60 | 60 |
 | 6 lights | 55 | 55 | 55 |
 
-Smart overloads first even though its average wait is lowest below capacity. It holds a flowing
-green longer, so in a heavy rush a busy cross street can back up off the map.
+Smart overloads first even though its average wait is lowest. It compares raw car counts, and each
+light is fed by 4 avenue lanes but only 2 street lanes, so a busy avenue nearly always outnumbers
+the street. On 1 light at slider 55, the street got 4 s of green in the evening rush to the
+avenue's 51 s, and its queue spilled off the map. Favoring the wider road is also why Smart's
+average is low: a green on 4 lanes moves twice the cars. Fixes tried (3 seeds, mean day wait
+across 8 setups, 31.2 s as is):
+
+| Change | Give-ups | Mean wait |
+|---|---|---|
+| Compare cars per lane | start ~10 later on 1–2 lights, no better on 4–6 | 35.8 s |
+| Count the whole queue, including off the map | same | 38.1 s |
+| Longer green after the 20 s cap forces a switch | no better | 32.6 s |
+
+None was worth the higher waits, so Smart is left as is: best on average, hardest on side streets.
 
 (Earlier versions dropped arrivals past 4 queued, without counting them. That was 7–9% of cars
 at slider 50 and over a third at 100, so average waits topped out near 20 s however busy it got,
