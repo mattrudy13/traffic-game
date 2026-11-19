@@ -45,7 +45,10 @@
     autoCheckEvery: 0.5,
     autoMinGreen: 3,
     autoMaxGreen: 20,
-    chillMaxOffMap: 4,   // in chill mode extra arrivals are just dropped, so a jam can't grow forever
+    // Chill mode: a car queued off the map this many seconds gives up and drives off. Without it,
+    // traffic above what the city can carry (about slider 60 on 6 lights) would build a queue that
+    // grows every day forever, since the night is too short to clear it.
+    giveUpAfter: 120,
     manualHold: 8,       // seconds a light you clicked is left alone before the strategy takes over again
     // Timer and green-wave lights run a fixed cycle: half of it green each way.
     cycleTime: 20,
@@ -193,8 +196,9 @@
       buses: false,
       ambulances: false,   // send one now and then by itself
       autoTimer: 0,
+      lastHour: 0,         // chill mode: the hour last step, to spot midnight
       exits: [],           // {t, wait} for cars that recently left the map
-      tally: { count: 0, sum: 0, worst: 0 }   // every trip since resetTally (compare mode's "today")
+      tally: { count: 0, sum: 0, worst: 0, gaveUp: 0 }   // every trip since resetTally ("today": it resets at midnight)
     };
     // Arrivals and turn choices come from their own streams per lane and per car, not from g.rng.
     // Why: compare mode runs two cities with different lights side by side. If both drew from one
@@ -386,9 +390,24 @@
     return 'night';
   }
 
+  // A finished trip (or one given up at the edge) goes into the last-minute window and today's tally.
+  function recordTrip(g, wait, id) {
+    g.exits.push({ t: g.time, wait: wait, id: id });
+    g.tally.count++;
+    g.tally.sum += wait;
+    g.tally.worst = Math.max(g.tally.worst, wait);
+  }
+
+  // Cars that have arrived but are still queued off the map, waiting for room to enter.
+  function waitingToEnter(g) {
+    var n = 0;
+    g.lanes.forEach(function (lane) { n += lane.offMap; });
+    return n;
+  }
+
   // Start counting trips afresh (compare mode does this at midnight).
   function resetTally(g) {
-    g.tally = { count: 0, sum: 0, worst: 0 };
+    g.tally = { count: 0, sum: 0, worst: 0, gaveUp: 0 };
   }
 
   // Average seconds stopped per trip, over cars that left in the last `waitWindow` seconds.
@@ -454,7 +473,7 @@
         cars: [],            // front-most car first
         stops: [],
         offMap: 0,           // cars that arrived but have no room to enter yet
-        pending: [],         // their arrival numbers, oldest first (offMap === pending.length)
+        pending: [],         // their arrival number and time, oldest first (offMap === pending.length)
         arrivals: 0,
         rng: seeded(mixSeed(g.seed, g.lanes.length)),
         weight: 1
@@ -864,10 +883,7 @@
       var gone = cars.shift();
       // Buses and ambulances aren't trips people are timing, so they stay out of the numbers.
       if (gone.bus || gone.ambulance) continue;
-      g.exits.push({ t: g.time, wait: gone.totalWait, id: gone.id });
-      g.tally.count++;
-      g.tally.sum += gone.totalWait;
-      g.tally.worst = Math.max(g.tally.worst, gone.totalWait);
+      recordTrip(g, gone.totalWait, gone.id);
       g.score++;
     }
   }
@@ -1075,13 +1091,22 @@
       // Counting this way follows the rate as it changes (a varying-rate Poisson process).
       lane.spawnTimer -= laneRate(g, lane, rate) * dt;
       if (lane.spawnTimer <= 0) {
+        // Every arrival waits at the edge until it fits, however long the queue gets. Dropping
+        // arrivals past a cap (as chill mode once did) hid the worst waits, flattered the more
+        // jammed compare map, and broke "same cars on both maps" once the two dropped different cars.
         lane.arrivals++;
-        if (!g.chill || lane.offMap < cfg.chillMaxOffMap) {
-          lane.offMap++;
-          lane.pending.push(lane.arrivals);
-        }
+        lane.offMap++;
+        lane.pending.push({ n: lane.arrivals, at: g.time });
         // Random gaps between arrivals (exponential), so traffic comes in clumps like real traffic.
         lane.spawnTimer += -Math.log(1 - lane.rng());
+      }
+      // Drivers queued too long at the edge give up. Their wait still counts as a trip: leaving it
+      // out would make the most jammed city look best, the same flaw as dropping arrivals.
+      while (g.chill && lane.pending.length && g.time - lane.pending[0].at >= cfg.giveUpAfter) {
+        var quit = lane.pending.shift();
+        lane.offMap--;
+        recordTrip(g, g.time - quit.at, null);
+        g.tally.gaveUp++;
       }
       var last = lane.cars[lane.cars.length - 1];
       var hasRoom = (!last || last.s - last.len >= cfg.minGap) && !(lane.ghosts || []).some(function (gh) {
@@ -1105,15 +1130,17 @@
       if (lane.offMap > 0 && hasRoom) {
         lane.offMap--;
         var arrival = lane.pending.shift();
+        // Time queued off the map counts as waiting: the driver has been stopped since arriving.
+        var edgeWait = g.time - arrival.at;
         var car = {
           id: g.nextId++,
           s: 0,
           v: last ? Math.min(cfg.maxSpeed, last.v) : cfg.maxSpeed * 0.8,
           len: cfg.carLength,
           wait: 0,        // seconds stopped at the current light (drives the car's color)
-          totalWait: 0,   // seconds stopped over the whole trip (drives the average wait)
-          arrival: arrival,   // this car's number among the lane's arrivals (same car in both compare cities)
-          rng: seeded(mixSeed(g.seed, lane.id, arrival))
+          totalWait: edgeWait,   // seconds stopped over the whole trip, from arrival (drives the average wait)
+          arrival: arrival.n,    // this car's number among the lane's arrivals (same car in both compare cities)
+          rng: seeded(mixSeed(g.seed, lane.id, arrival.n))
         };
         car.plan = makePlan(g, lane, 0, null, car.rng);
         lane.cars.push(car);
@@ -1264,6 +1291,12 @@
     applyJoins(g, joins);
     spawnCars(g, dt);
     while (g.exits.length && g.exits[0].t < g.time - g.cfg.waitWindow) g.exits.shift();
+    if (g.chill) {
+      // "Today" starts again at midnight.
+      var hour = hourOfDay(g);
+      if (hour < g.lastHour) resetTally(g);
+      g.lastHour = hour;
+    }
     if (!g.chill) checkLose(g);
   }
 
@@ -1344,6 +1377,7 @@
     darkness: darkness,
     dayPhase: dayPhase,
     averageWait: averageWait,
+    waitingToEnter: waitingToEnter,
     resetTally: resetTally,
     KINDS: KINDS,
     kindNote: kindNote,

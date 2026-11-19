@@ -1,12 +1,18 @@
 // Extras test: weather, buses and ambulances on every layout and strategy for a game day.
 // Checks nothing gridlocks, buses really stop and get through, every ambulance crosses the city,
 // and two compare cities with the same seed still get the same buses and ambulances.
+// "Gets through" means no bus or ambulance spends longer than STUCK seconds on the map, whether
+// it finished or is still driving when the day ends. (Counting how many were still mid-trip at
+// the end failed for the wrong reason once queues stopped being capped: a busier map just has
+// more of them on the road at that moment.)
 // Run with:  node extras-test.js   (takes ~30 s)
 var Sim = require('./sim.js');
 var problems = 0;
+var STUCK = 200;   // seconds; the longest seen at this traffic is about 145
 function run(n, st, weather, kind) {
   var g = Sim.createChill(n, 0.35, { seed: 11, strategy: st, weather: weather, buses: true, ambulances: true, kind: kind });
   var last = 0, worst = 1e9, busesSeen = {}, busesDone = 0, ambSeen = {}, ambDone = 0, dwelled = 0, snow = 0, rain = 0;
+  var entered = {}, longest = 0;
   for (var i = 1; i <= 360 * 60; i++) {
     if (i % (20 * 60) === 0) Sim.sendAmbulance(g, (i / 1200 * 0.37) % 1);   // the button, now and then
     Sim.step(g, 1 / 60);
@@ -15,6 +21,10 @@ function run(n, st, weather, kind) {
     g.lanes.forEach(function (l) { l.cars.forEach(function (c) {
       if (c.bus) { busesSeen[c.id] = 1; present[c.id] = 1; if (c.dwell > 0) dwelled++; }
       if (c.ambulance) { ambSeen[c.id] = 1; present[c.id] = 1; }
+      if (c.bus || c.ambulance) {
+        if (!(c.id in entered)) entered[c.id] = g.time;
+        longest = Math.max(longest, g.time - entered[c.id]);
+      }
     }); });
     Object.keys(busesSeen).forEach(function (id) { if (!present[id] && busesSeen[id] === 1) { busesSeen[id] = 2; busesDone++; } });
     Object.keys(ambSeen).forEach(function (id) { if (!present[id] && ambSeen[id] === 1) { ambSeen[id] = 2; ambDone++; } });
@@ -25,10 +35,10 @@ function run(n, st, weather, kind) {
     }
   }
   var buses = Object.keys(busesSeen).length, ambs = Object.keys(ambSeen).length;
-  var bad = worst === 0 || buses < 5 || busesDone < buses - 6 || dwelled === 0 || ambs < 8 || ambDone < ambs - 3;
+  var bad = worst === 0 || buses < 5 || dwelled === 0 || ambs < 8 || longest > STUCK;
   if (bad) problems++;
   return st + ' ' + (g.tally.sum / g.tally.count).toFixed(1) + 's min/30s ' + worst + ' buses ' + busesDone + '/' + buses +
-    ' amb ' + ambDone + '/' + ambs + (weather === 'changing' ? ' rain/snow ' + Math.round(rain / 3600) + '/' + Math.round(snow / 3600) + 's' : '') + (bad ? ' <-- PROBLEM' : '');
+    ' amb ' + ambDone + '/' + ambs + ' longest ' + Math.round(longest) + 's' + (weather === 'changing' ? ' rain/snow ' + Math.round(rain / 3600) + '/' + Math.round(snow / 3600) + 's' : '') + (bad ? ' <-- PROBLEM' : '');
 }
 ['clear', 'rain', 'snow', 'changing'].forEach(function (weather) {
   [1, 2, 4, 6].forEach(function (n) {
