@@ -28,6 +28,9 @@
     stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d',
     rainInk: '#aac8f0', snowEdge: '#e8e4dc'
   };
+  // Everything outside the map, plus the bits drawn on it that use the strip's ink and paper.
+  var FLIP = { paper: 1, ink: 1, muted: 1, track: 1, rush: 1, spark: 1, danger: 1, sideA: 1, sideAInk: 1,
+    sideB: 1, sideBInk: 1, chip: 1, arrow: 1 };
   var CSS_VARS = ['map', 'paper', 'ink', 'muted', 'track', 'rush', 'spark', 'danger', 'sideA', 'sideAInk', 'sideB', 'sideBInk'];
   // CSS custom property names for the palette keys (sideA -> --side-a).
   function cssVarName(k) { return '--' + k.replace(/[A-Z]/g, function (c) { return '-' + c.toLowerCase(); }); }
@@ -213,8 +216,13 @@
     var d = Math.round(darkness * 100) / 100;
     if (d === paletteDarkness) return;
     paletteDarkness = d;
+    // Text and what it sits on run opposite ways (dark on cream by day, cream on dark by night), so
+    // a gradual fade takes them through the same gray mid-dusk and the strip vanishes for a while.
+    // Those colors switch all at once at the halfway point instead (style.css eases the switch);
+    // the map itself keeps the slow fade.
+    var flipped = d < 0.5 ? 0 : 1;
     palette = {};
-    Object.keys(DAY).forEach(function (k) { palette[k] = mixHex(DAY[k], NIGHT[k], d); });
+    Object.keys(DAY).forEach(function (k) { palette[k] = mixHex(DAY[k], NIGHT[k], FLIP[k] ? flipped : d); });
     var root = document.documentElement.style;
     CSS_VARS.forEach(function (k) { root.setProperty(cssVarName(k), palette[k]); });
   }

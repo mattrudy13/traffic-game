@@ -1,7 +1,20 @@
 /*
  * Colors are variables because game.js fades them between the day (paper) and night (lamplit)
- * palettes as the clock runs. These are the daytime values.
+ * palettes as the clock runs. These are the daytime values. The map colors fade slowly; the strip's
+ * colors switch at dusk and dawn, eased over 0.8 s by the transition below (which needs the
+ * variables registered as colors).
  */
+@property --paper { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --track { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --rush { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --spark { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --danger { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --side-a { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --side-a-ink { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --side-b { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --side-b-ink { syntax: '<color>'; inherits: true; initial-value: #000; }
 :root {
   --map: #f5f1e8;       /* map ground */
   --paper: #f5f1e8;     /* page and strip background */
@@ -17,6 +30,7 @@
   --side-a-ink: #f5f1e8;
   --side-b: #c47a12;    /* compare mode: map B (orange, dashed chart line) */
   --side-b-ink: #22252b;
+  transition: --paper 0.8s, --ink 0.8s, --muted 0.8s, --track 0.8s, --rush 0.8s, --spark 0.8s, --danger 0.8s, --side-a 0.8s, --side-a-ink 0.8s, --side-b 0.8s, --side-b-ink 0.8s;
 }
 
 * { box-sizing: border-box; }
