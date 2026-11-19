@@ -35,7 +35,7 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
 - `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes): `node overlap-test.js`.
 - `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
-- `extras-test.js`: runs weather, buses and ambulances on every layout and strategy and checks nothing gridlocks, buses stop and get through, every ambulance crosses, and compare maps still match: `node extras-test.js`.
+- `extras-test.js`: runs weather, buses and ambulances on every layout and strategy and checks nothing gridlocks, buses stop, no bus or ambulance spends over 200 s on the map, and compare maps still match: `node extras-test.js`.
 - `kinds-test.js`: runs every traffic kind on every layout and checks nothing gridlocks, no car drives on the closed lane, and the stadium crowd shows up: `node kinds-test.js`.
 
 ## How the cars move
@@ -147,6 +147,21 @@ buses and ambulances.
 Buses and ambulances aren't counted in the wait numbers or cars through. Their timetables come from
 the city's seed, so in compare mode they enter both maps at the same moments.
 
+## Waiting at the edge
+
+When a lane is backed up to the edge, new arrivals queue off the map, and a red "+12 WAITING" badge
+shows beside that road (in every mode). A car's wait counts from the moment it arrives, so time
+queued off the map is part of its trip.
+
+In chill mode a car that has queued off the map for 120 s gives up and drives off. Its 120 s still
+counts as a trip in the wait numbers, and the strip shows how many gave up today. Without this,
+traffic above what the city can carry (about slider 60 on 6 lights) would build a queue that grows
+every day forever, since the night is too short to clear it. "Today" resets at midnight.
+
+(Earlier versions dropped arrivals past 4 queued, without counting them. That was 7–9% of cars
+at slider 50 and over a third at 100, so average waits topped out near 20 s however busy it got,
+and the more jammed compare map looked better than it was.)
+
 ## Compare mode
 
 **Compare setups** (in the controls; on phones, in the Controls sheet) opens two maps side by side:
@@ -169,9 +184,8 @@ lights draw extra random numbers for their offsets, which would shift every car 
 same time of day, with new cars (a new traffic kind starts a new day). Switching one city mid-run would leave it with the other
 setup's queues, which isn't a fair race. Traffic and speed change both live.
 
-One thing the numbers leave out (in every mode): when a lane is backed up to the edge, new arrivals
-wait off the map and that waiting isn't counted, and in chill mode arrivals past 4 waiting are
-dropped. At normal traffic this rarely happens; at very busy it can flatter the more jammed map.
+Under each map, **Waiting to enter** is how many cars are queued off the map right now, with how
+many gave up today beneath it (see Waiting at the edge).
 
 ## Testing
 

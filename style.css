@@ -367,11 +367,19 @@ body.phone .value.small { font-size: 22px; }
 body.phone .label { font-size: 10px; }
 body.phone .sub { font-size: 12px; }
 body.phone .wait-stat { gap: 0; }
+/* The slim bar fits four stats and pause only with short labels: "Cars", "Waiting". */
+body.phone .strip .stat > .label .long { display: none; }
 
 /* The bar's second row: Controls in chill mode, Back to chill in the challenge. */
 body.phone .controls-open,
 body.phone #modeButton { order: 10; flex-basis: 100%; justify-content: center; align-items: center; }
 body.phone.mode-chill #modeButton { display: none; }
+/* Chill held upright: pause moves down beside Controls, so the four stats keep the top row to
+   themselves (it ran out of room once "Waiting" joined it and the counts grew). */
+/* Controls is too wide to fit after the stats, so it always starts the second row, and pause
+   (ordered after it) follows it there, at the right as before. */
+body.phone.mode-chill .controls-open { flex: 0 1 calc(100% - 54px); }
+body.phone.mode-chill #pauseButton { order: 11; }
 
 /* The sheet */
 body.phone .controls { display: none; }
@@ -441,7 +449,8 @@ body.phone .weather-seg button { padding: 0 2px; font-size: 13px; }
 /* Phone on its side: no room for a second row, so Controls sits at the end of the bar. */
 @media (orientation: landscape) {
   body.phone .controls-open,
-  body.phone #modeButton { order: 0; flex-basis: auto; padding: 0 16px; }
+  body.phone #modeButton { order: 0; flex: none; padding: 0 16px; }
+  body.phone.mode-chill #pauseButton { order: 0; }
   body.phone .strip-row:first-child { flex-wrap: nowrap; }
   body.phone .strip { padding: 8px 14px; }
 }
@@ -505,9 +514,14 @@ body.phone .weather-seg button { padding: 0 2px; font-size: 13px; }
 .cmp-map { flex: none; display: flex; justify-content: center; }
 .cmp-map canvas { display: block; border: 3px solid var(--side); background: var(--map); }
 
-.cmp-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 14px; align-items: end; }
+.cmp-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 14px; align-items: end; }
 .cmp-stats .stat { border-top: 2px solid var(--ink); padding-top: 6px; }
 .cmp-stats .value { font-size: 28px; }
+/* "69 gave up today" hangs on one line under its number instead of wrapping beside it, which
+   made that column taller and knocked its top rule out of line with the other three. */
+body:not(.phone) .cmp-stats { padding-bottom: 18px; }
+body:not(.phone) .cmp-stats .stat { position: relative; }
+body:not(.phone) .cmp-stats .sub { position: absolute; left: 0; top: 100%; margin-top: 2px; white-space: nowrap; }
 .cmp-lead { min-width: 170px; padding: 8px 10px; font-size: 14px; color: var(--muted); text-align: center; }
 .cmp-lead.ahead {
   background: var(--ink);
@@ -587,7 +601,8 @@ body.phone .cmp-phone-btn { order: 10; flex: 1 1 40%; justify-content: center; a
   body.phone .cmp-pick .cmp-badge { height: 36px; }
   body.phone .cmp-chart,
   body.phone .cmp-stats .stat:nth-child(2),
-  body.phone .cmp-stats .stat:nth-child(3) { display: none; }
+  body.phone .cmp-stats .stat:nth-child(3),
+  body.phone .cmp-stats .stat:nth-child(4) { display: none; }
   body.phone .cmp-stats { flex-direction: row; align-items: center; justify-content: space-between; }
   body.phone .cmp-lead { margin-top: 0; }
   body.phone .cmp-phone-btn { order: 0; flex: none; padding: 0 14px; }

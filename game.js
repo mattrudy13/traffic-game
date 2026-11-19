@@ -7,7 +7,6 @@
   var Sim = window.TrafficSim;
   var cfg = Sim.CONFIG;
   var W = cfg.width, H = cfg.height;
-  var HALF = cfg.roadWidth / 2;   // half a side street (challenge mode badges use it)
 
   // Day is the paper map; night is the same map under warm streetlights. Every color in between
   // is a straight blend of the two, so dusk and dawn fade smoothly.
@@ -88,7 +87,7 @@
     queue: $('queue'), queueEdge: $('queueEdge'), queueStat: $('queueStat'),
     pause: $('pauseButton'), toast: $('toast'), hint: $('hint'), modeButton: $('modeButton'),
     dayClock: $('dayClock'), dayPhase: $('dayPhase'), dayMarker: $('dayMarker'),
-    avgWait: $('avgWait'), waitLine: $('waitLine'), strategyNote: $('strategyNote'),
+    avgWait: $('avgWait'), enter: $('enter'), gaveUp: $('gaveUp'), waitLine: $('waitLine'), strategyNote: $('strategyNote'),
     layoutButtons: $('layoutButtons'), strategyButtons: $('strategyButtons'), speedButtons: $('speedButtons'),
     arrowButtons: $('arrowButtons'),
     controlsOpen: $('controlsOpen'), controlsClose: $('controlsClose'), backdrop: $('sheetBackdrop'),
@@ -130,12 +129,13 @@
       border: 3, scale: 1, rotated: false,
       stats: {
         avg: el.querySelector('[data-stat="avg"]'), worst: el.querySelector('[data-stat="worst"]'),
-        today: el.querySelector('[data-stat="today"]'), lead: el.querySelector('[data-stat="lead"]')
+        today: el.querySelector('[data-stat="today"]'), lead: el.querySelector('[data-stat="lead"]'),
+        enter: el.querySelector('[data-stat="enter"]'), gaveUp: el.querySelector('[data-stat="gaveup"]')
       }
     };
   });
-  // Compare mode's two cities (a and b), their wait charts and the clock hour last frame.
-  var cmp = { a: null, b: null, chartA: [], chartB: [], nextSample: 0, lastHour: 0 };
+  // Compare mode's two cities (a and b) and their wait charts.
+  var cmp = { a: null, b: null, chartA: [], chartB: [], nextSample: 0 };
 
   // ------------------------------------------------------------------ sizing
 
@@ -267,13 +267,14 @@
     if (drawn.construction) drawConstruction();
     if (drawn.buses) drawBusStops();
     if (darkness > 0) drawStreetlights(darkness);
-    var queues = kind === 'challenge' ? Sim.edgeQueues(drawn) : null;
-    if (queues) drawDanger(queues);
+    // Every mode shows where cars are queued off the map; only the challenge adds the red glow.
+    var queues = Sim.edgeQueues(drawn);
+    if (kind === 'challenge') drawDanger(queues);
     drawStopBars();
     if (darkness > 0) drawHeadlights(darkness);
     drawCars(nowMs);
     drawLights(darkness);
-    if (queues) drawOffMapBadges(queues);
+    drawOffMapBadges(queues);
     if (wx.rain > 0) drawRain(wx.rain, nowMs);
     if (wx.snow > 0) drawSnow(wx.snow, nowMs);
   }
@@ -701,25 +702,33 @@
     ctx.restore();
   }
 
+  // "+12 WAITING" beside the road at the edge where cars are queued off the map. Shown once the
+  // entry stretch is full too, so a car that waits a moment for the one ahead to move doesn't flash one.
   function drawOffMapBadges(queues) {
     ctx.font = '800 13px Archivo, sans-serif';
-    ctx.textBaseline = 'middle';
     queues.forEach(function (q) {
       if (q.offMap < 1 || q.pressure < 1) return;
-      var text = '+' + q.offMap + ' OF ' + cfg.maxOffMap + ' WAITING';
+      var text = kind === 'challenge' ? '+' + q.offMap + ' OF ' + cfg.maxOffMap + ' WAITING' : '+' + q.offMap + ' WAITING';
       var bw = ctx.measureText(text).width + 16, bh = 24, pad = 6;
-      var road = q.lane.road.c, x, y;
-      // Put the badge beside the road at the edge the cars are stuck behind.
+      // The badge is drawn upright on screen, so on a turned map it takes up bh x bw of the world.
+      var ew = drawRotated ? bh : bw, eh = drawRotated ? bw : bh;
+      var road = q.lane.road.c, half = q.lane.road.half, x, y;
       switch (q.lane.dir) {
-        case 'S': x = road - HALF - pad - bw; y = pad; break;
-        case 'N': x = road + HALF + pad; y = H - pad - bh; break;
-        case 'E': x = pad; y = road + HALF + pad; break;
-        default: x = W - pad - bw; y = road - HALF - pad - bh;
+        case 'S': x = road - half - pad - ew; y = pad; break;
+        case 'N': x = road + half + pad; y = H - pad - eh; break;
+        case 'E': x = pad; y = road + half + pad; break;
+        default: x = W - pad - ew; y = road - half - pad - eh;
       }
+      ctx.save();
+      ctx.translate(x + ew / 2, y + eh / 2);
+      if (drawRotated) ctx.rotate(-Math.PI / 2);
       ctx.fillStyle = palette.red;
-      ctx.fillRect(x, y, bw, bh);
+      ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(text, x + 8, y + bh / 2 + 1);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 0, 1);
+      ctx.restore();
     });
   }
 
@@ -766,6 +775,14 @@
     ui.dayMarker.style.left = (hour / 24 * 100).toFixed(2) + '%';
     var wait = Sim.averageWait(game);
     setText(ui.avgWait, wait === null ? '–' : wait.toFixed(1) + 's');
+    setText(ui.enter, String(Sim.waitingToEnter(game)));
+    setText(ui.gaveUp, gaveUpText(game));
+  }
+
+  // Phones drop "today" to keep the slim bar on one row.
+  function gaveUpText(city) {
+    if (!city.tally.gaveUp) return '';
+    return city.tally.gaveUp.toLocaleString() + (phoneQuery.matches ? ' gave up' : ' gave up today');
   }
 
   function updateChallengeStrip() {
@@ -844,6 +861,8 @@
       setText(st.avg, formatWait(Sim.averageWait(city)));
       setText(st.worst, city.tally.count ? Math.round(city.tally.worst) + 's' : '–');
       setText(st.today, formatWait(todayAverage(city)));
+      setText(st.enter, String(Sim.waitingToEnter(city)));
+      setText(st.gaveUp, gaveUpText(city));
       var lead = !enough ? 'Too early to call' : !leader ? 'Even so far today'
         : leader === v.side ? 'Ahead by ' + gap.toFixed(1) + 's today' : gap.toFixed(1) + 's behind today';
       setText(st.lead, lead);
@@ -941,7 +960,6 @@
     cmp.chartA = [];
     cmp.chartB = [];
     cmp.nextSample = 0;
-    cmp.lastHour = hour;
     ui.cmpLineA.setAttribute('points', '');
     ui.cmpLineB.setAttribute('points', '');
   }
@@ -1191,10 +1209,6 @@
         Sim.step(cmp.a, dt / 2);
         Sim.step(cmp.b, dt / 2);
       }
-      // "Today" starts again at midnight.
-      var hour = Sim.hourOfDay(cmp.a);
-      if (hour < cmp.lastHour) { Sim.resetTally(cmp.a); Sim.resetTally(cmp.b); }
-      cmp.lastHour = hour;
       sampleCompareChart();
       cmp.a.events.length = 0;    // nothing to announce in compare mode (ambulances toast on the button)
       cmp.b.events.length = 0;

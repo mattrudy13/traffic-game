@@ -59,7 +59,7 @@
         </div>
       </div>
       <div class="stat">
-        <span class="label">Cars through</span>
+        <span class="label">Cars<span class="long"> through</span></span>
         <span class="value" id="score">0</span>
       </div>
       <div class="stat chill-only wait-stat">
@@ -70,6 +70,10 @@
         <svg class="sparkline" id="waitChart" width="140" height="36" viewBox="0 0 140 36" role="img" aria-label="Average wait over the last few minutes">
           <polyline id="waitLine" points=""></polyline>
         </svg>
+      </div>
+      <div class="stat chill-only enter-stat">
+        <span class="label">Waiting<span class="long"> to enter</span></span>
+        <span class="value-row"><span class="value" id="enter">0</span><span class="sub" id="gaveUp"></span></span>
       </div>
 
       <!-- Challenge mode stats -->
@@ -225,6 +229,7 @@
           <div class="stat"><span class="label">Avg<span class="long"> wait</span> · last min</span><span class="value" data-stat="avg">–</span></div>
           <div class="stat"><span class="label">Worst<span class="long"> wait</span> today</span><span class="value" data-stat="worst">–</span></div>
           <div class="stat"><span class="label">Avg<span class="long"> wait</span> · today</span><span class="value" data-stat="today">–</span></div>
+          <div class="stat"><span class="label">Waiting<span class="long"> to enter</span></span><span class="value-row"><span class="value" data-stat="enter">0</span><span class="sub" data-stat="gaveup"></span></span></div>
           <span class="cmp-lead" data-stat="lead"></span>
         </div>
       </div>
@@ -251,6 +256,7 @@
           <div class="stat"><span class="label">Avg<span class="long"> wait</span> · last min</span><span class="value" data-stat="avg">–</span></div>
           <div class="stat"><span class="label">Worst<span class="long"> wait</span> today</span><span class="value" data-stat="worst">–</span></div>
           <div class="stat"><span class="label">Avg<span class="long"> wait</span> · today</span><span class="value" data-stat="today">–</span></div>
+          <div class="stat"><span class="label">Waiting<span class="long"> to enter</span></span><span class="value-row"><span class="value" data-stat="enter">0</span><span class="sub" data-stat="gaveup"></span></span></div>
           <span class="cmp-lead" data-stat="lead"></span>
         </div>
       </div>
