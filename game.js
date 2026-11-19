@@ -17,7 +17,7 @@
     spark: '#c47a12', danger: '#b3262b', median: '#d9d1c0',
     sideA: '#24539a', sideAInk: '#f5f1e8', sideB: '#c47a12', sideBInk: '#22252b',
     stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00',
-    rainInk: '#3460a0', snowEdge: '#ffffff'
+    rainInk: '#3460a0', snowEdge: '#ffffff', paint: '#f5f1e8', sign: '#c8323a', island: '#a9c48f'
   };
   var NIGHT = {
     map: '#3b362e', grid: '#453f36', road: '#1c1b19', dash: '#5a554c', car: '#f4ead6',
@@ -26,7 +26,7 @@
     spark: '#ffd166', danger: '#ff8a80', median: '#4d473c',
     sideA: '#8fb3ea', sideAInk: '#2b2722', sideB: '#ffb547', sideBInk: '#2b2722',
     stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d',
-    rainInk: '#aac8f0', snowEdge: '#e8e4dc'
+    rainInk: '#aac8f0', snowEdge: '#e8e4dc', paint: '#d8d0c0', sign: '#e5484d', island: '#4f6143'
   };
   // Everything outside the map, plus the bits drawn on it that use the strip's ink and paper.
   var FLIP = { paper: 1, ink: 1, muted: 1, track: 1, rush: 1, spark: 1, danger: 1, sideA: 1, sideAInk: 1,
@@ -65,6 +65,15 @@
     for (var i = 0; i < 220; i++) out.push({ x: r(), y: r(), k: 0.7 + r() * 0.6, size: r() });
     return out;
   })();
+  var PLACE_NAMES = { downtown: 'Downtown', main: 'Main Street', suburb: 'Suburb', crosstown: 'Crosstown' };
+  var PLACE_NOTES = {
+    downtown: '',
+    main: 'Main Street: side streets stop and wait for a gap in the avenue; one light at the busiest crossing. The back street has all-way stops.',
+    suburb: 'Suburb: no lights. All-way stops, a roundabout where the two through streets meet, and a school run.',
+    crosstown: 'Crosstown: two avenues meet at a roundabout, each narrowing to one lane on the way in. Lights on the side streets.'
+  };
+  // Stadium and Construction are built around Downtown's grid.
+  var DOWNTOWN_KINDS = ['stadium', 'construction'];
   var KIND_NAMES = { normal: 'Normal', commute: 'Commute', stadium: 'Stadium', sunday: 'Sunday', construction: 'Construction' };
   var KIND_NOTES = {
     normal: 'Normal: two rush hours; some streets are busier than others.',
@@ -98,6 +107,7 @@
     traffic: $('traffic'), trafficName: $('trafficName'),
     sheetSpeedButtons: $('sheetSpeedButtons'), kindButtons: $('kindButtons'), kindNote: $('kindNote'),
     controlTabs: $('controlTabs'), cmpKindButtons: $('cmpKindButtons'),
+    placeButtons: $('placeButtons'), cmpPlaceButtons: $('cmpPlaceButtons'),
     weatherButtons: $('weatherButtons'), busButtons: $('busButtons'), ambulanceButton: $('ambulanceButton'),
     cmpWeatherButtons: $('cmpWeatherButtons'), cmpBusButtons: $('cmpBusButtons'), cmpAmbulance: $('cmpAmbulance'),
     compareButton: $('compareButton'), sheetCompare: $('sheetCompare'),
@@ -273,6 +283,7 @@
     if (wx.rain > 0) drawWetRoads(wx.rain);
     if (wx.snow > 0) drawSnowyEdges(wx.snow);
     if (drawn.construction) drawConstruction();
+    drawEndedLanes();
     if (drawn.buses) drawBusStops();
     if (darkness > 0) drawStreetlights(darkness);
     // Every mode shows where cars are queued off the map; only the challenge adds the red glow.
@@ -441,7 +452,44 @@
     });
     // Plain boxes over the crossings so lines and medians don't run through them.
     ctx.fillStyle = palette.road;
-    drawn.lights.forEach(function (l) { ctx.fillRect(l.x - l.hx, l.y - l.hy, l.hx * 2, l.hy * 2); });
+    drawn.lights.forEach(function (l) {
+      if (l.control !== 'round') ctx.fillRect(l.x - l.hx, l.y - l.hy, l.hx * 2, l.hy * 2);
+    });
+    drawn.lights.forEach(function (l) { if (l.control === 'round') drawRoundabout(l); });
+  }
+
+  // A roundabout: a disc of road with a planted island in the middle, edged in white paint.
+  function drawRoundabout(l) {
+    var outer = l.hx, island = l.ring - cfg.roundLane / 2;
+    ctx.fillStyle = palette.road;
+    ctx.beginPath();
+    ctx.arc(l.x, l.y, outer, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(l.x, l.y, island, 0, Math.PI * 2);
+    ctx.fillStyle = palette.island;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = palette.paint;
+    ctx.stroke();
+  }
+
+  // Yield "shark teeth": a row of small white triangles across the lane, pointing at the driver.
+  function drawYieldTeeth(lane, stop) {
+    var p = Sim.lanePoint(lane, stop.line - 3), a = p.angle, across = a + Math.PI / 2;
+    var n = 4, w = lane.width - 6, size = w / n;
+    ctx.fillStyle = palette.paint;
+    for (var k = 0; k < n; k++) {
+      var o = -w / 2 + size * (k + 0.5);
+      var cx = p.x + Math.cos(across) * o, cy = p.y + Math.sin(across) * o;
+      ctx.beginPath();
+      // Base on the line, tip pointing back toward the approaching car.
+      ctx.moveTo(cx + Math.cos(across) * size * 0.42, cy + Math.sin(across) * size * 0.42);
+      ctx.lineTo(cx - Math.cos(across) * size * 0.42, cy - Math.sin(across) * size * 0.42);
+      ctx.lineTo(cx - Math.cos(a) * size * 0.9, cy - Math.sin(a) * size * 0.9);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   // The stadium fills (up to a size) the block north-east of the last crossing: an outlined bowl
@@ -506,6 +554,33 @@
     var road = lane.road;
     if (lane.axis === 'ew') drawLabel('LANE CLOSED', mid.x, road.c + road.half + 16, palette.closed, '#22252b', 12);
     else drawLabel('LANE CLOSED', road.c + road.half + 60, mid.y, palette.closed, '#22252b', 12);
+  }
+
+  // Where an avenue's outer lane ends before a roundabout, the closed stretch is painted over as
+  // a hatched gore (like the striped area where real lanes end). Construction draws its own.
+  function drawEndedLanes() {
+    drawn.lanes.forEach(function (lane) {
+      lane.stops.forEach(function (stop) {
+        if (!stop.closed || (drawn.construction && drawn.construction.stop === stop)) return;
+        var r = laneRect(lane, stop.boxEnd, isFinite(stop.segmentEnd) ? stop.segmentEnd : lane.length, lane.width - 2);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(r.x, r.y, r.w, r.h);
+        ctx.clip();
+        ctx.fillStyle = palette.road;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.strokeStyle = palette.paint;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (var x = r.x - r.h - r.w; x < r.x + r.w + r.h; x += 12) {
+          ctx.moveTo(x, r.y + r.h);
+          ctx.lineTo(x + Math.max(r.h, r.w), r.y + r.h - Math.max(r.h, r.w));
+        }
+        ctx.stroke();
+        ctx.restore();
+      });
+    });
   }
 
   // Text at a world point, kept upright when the map is drawn turned (phones held upright).
@@ -584,11 +659,42 @@
   function drawStopBars() {
     drawn.lanes.forEach(function (lane) {
       lane.stops.forEach(function (stop) {
+        var L = stop.light;
+        if (L.control === 'stop2' || L.control === 'stop4') { drawStopSign(lane, stop); return; }
+        if (L.control === 'round') { if (!stop.laneEnds) drawYieldTeeth(lane, stop); return; }
+        if (L.control !== 'light') return;
         var r = laneRect(lane, stop.line - 5, stop.line, lane.width - 4);
         ctx.fillStyle = barColor(stop.light, lane);
         roundRect(r.x, r.y, r.w, r.h, 2);
       });
     });
+  }
+
+  // A stop sign: a painted white line across each lane that has to stop, and a small red
+  // octagon at the curb. Signs get no round chip, since chips are the lights you can click.
+  function drawStopSign(lane, stop) {
+    var L = stop.light;
+    if (L.control === 'stop2' && lane.axis === L.major) return;
+    var r = laneRect(lane, stop.line - 4, stop.line, lane.width - 4);
+    ctx.fillStyle = palette.paint;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (lane.position === 'inner') return;
+    var p = Sim.lanePoint(lane, stop.line - 9), right = p.angle + Math.PI / 2, off = lane.width / 2 + 9;
+    drawOctagon(p.x + Math.cos(right) * off, p.y + Math.sin(right) * off, 6.5);
+  }
+
+  function drawOctagon(x, y, radius) {
+    ctx.beginPath();
+    for (var k = 0; k < 8; k++) {
+      var a = Math.PI / 8 + k * Math.PI / 4;
+      ctx.lineTo(x + Math.cos(a) * radius, y + Math.sin(a) * radius);
+    }
+    ctx.closePath();
+    ctx.fillStyle = palette.sign;
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = palette.paint;
+    ctx.stroke();
   }
 
   // Each car is drawn at the middle of its body, turned to its heading, so turning and
@@ -661,6 +767,7 @@
 
   function drawLights(darkness) {
     drawn.lights.forEach(function (l) {
+      if (!Sim.isLight(l)) return;
       var radius = l === hoverLight && status === 'running' ? 18 : 15;
       var ring = l.phase === 'green' || l.phase === 'arrow' ? palette.green : l.phase === 'amber' ? palette.amber : palette.red;
       ctx.beginPath();
@@ -912,7 +1019,7 @@
   // Chill settings are remembered per browser so the city comes back the way you left it.
   function loadPrefs() {
     var p = { lights: 4, traffic: 45, strategy: 'smart', speed: 1, arrows: true, compare: null, kind: 'normal', tab: 'lights',
-      weather: 'clear', buses: true };
+      weather: 'clear', buses: true, place: 'downtown' };
     try {
       var saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
       if ([1, 2, 4, 6].indexOf(saved.lights) >= 0) p.lights = saved.lights;
@@ -924,6 +1031,8 @@
       if (['lights', 'traffic', 'extras'].indexOf(saved.tab) >= 0) p.tab = saved.tab;
       if (['clear', 'rain', 'snow', 'changing'].indexOf(saved.weather) >= 0) p.weather = saved.weather;
       if (typeof saved.buses === 'boolean') p.buses = saved.buses;
+      if (Sim.PLACES.indexOf(saved.place) >= 0) p.place = saved.place;
+      if (p.place !== 'downtown' && DOWNTOWN_KINDS.indexOf(p.kind) >= 0) p.kind = 'normal';
       var c = saved.compare;
       if (c && c.a && c.b && STRATEGY_NOTES[c.a.strategy] && STRATEGY_NOTES[c.b.strategy]) {
         p.compare = {
@@ -958,6 +1067,13 @@
     4: { smart: 55, timer: 60, wave: 60 },
     6: { smart: 55, timer: 55, wave: 55 }
   };
+  // The same measure for the other places (lights count doesn't apply there). Suburb has no lights,
+  // so its strategy doesn't matter; its quieter school-run day carries more before it overloads.
+  var PLACE_CAPACITY = {
+    main: { smart: 55, timer: 60, wave: 60 },
+    suburb: { smart: 75, timer: 75, wave: 75 },
+    crosstown: { smart: 60, timer: 55, wave: 55 }
+  };
 
   // Name the slider value and shade the track past capacity. Above it the filled part turns
   // red too, so it reads as "too much" before the badges pile up.
@@ -970,16 +1086,20 @@
       ? 'linear-gradient(to right, var(--ink) 0 ' + cap + '%, var(--danger) ' + cap + '% ' + v + '%, ' + soft + ' ' + v + '%)'
       : 'linear-gradient(to right, var(--ink) 0 ' + v + '%, var(--track) ' + v + '% ' + cap + '%, ' + soft + ' ' + cap + '%)');
   }
-  function chillCapacity() { return CAPACITY[prefs.lights][prefs.strategy]; }
+  function capacity(strategy) {
+    var row = prefs.place === 'downtown' ? CAPACITY[prefs.lights] : PLACE_CAPACITY[prefs.place];
+    return row ? row[strategy] : 101;
+  }
+  function chillCapacity() { return capacity(prefs.strategy); }
   // The first of the two maps to overload sets the mark.
   function compareCapacity() {
-    var row = CAPACITY[prefs.lights];
-    return Math.min(row[prefs.compare.a.strategy], row[prefs.compare.b.strategy]);
+    return Math.min(capacity(prefs.compare.a.strategy), capacity(prefs.compare.b.strategy));
   }
 
   // `hour` (optional) starts the day at that time, so leaving compare mode carries on the same day.
   function newChillGame(hour) {
-    var options = { strategy: prefs.strategy, arrows: prefs.arrows, kind: prefs.kind, weather: prefs.weather, buses: prefs.buses, ambulances: true };
+    var options = { strategy: prefs.strategy, arrows: prefs.arrows, kind: prefs.kind, weather: prefs.weather, buses: prefs.buses, ambulances: true,
+      place: prefs.place };
     if (START_HOUR >= 0 && START_HOUR < 24 && location.search.indexOf('hour=') >= 0) options.dayStartHour = START_HOUR;
     if (hour !== undefined) options.dayStartHour = hour;
     return Sim.createChill(prefs.lights, trafficRate(prefs.traffic), options);
@@ -992,7 +1112,7 @@
       var setup = prefs.compare[side];
       cmp[side] = Sim.createChill(prefs.lights, trafficRate(prefs.traffic),
         { seed: seed, strategy: setup.strategy, arrows: setup.arrows, kind: prefs.kind, weather: prefs.weather,
-          buses: prefs.buses, ambulances: true, dayStartHour: hour });
+          buses: prefs.buses, ambulances: true, dayStartHour: hour, place: prefs.place });
     });
     cmp.chartA = [];
     cmp.chartB = [];
@@ -1017,12 +1137,42 @@
     setText(ui.cmpLegendA, 'A · ' + STRATEGY_NAMES[prefs.compare.a.strategy]);
     setText(ui.cmpLegendB, 'B · ' + STRATEGY_NAMES[prefs.compare.b.strategy]);
     markPressed(ui.cmpLayoutButtons, prefs.lights);
+    markPressed(ui.cmpPlaceButtons, prefs.place);
+    showPlace();
     markPressed(ui.cmpSpeedButtons, prefs.speed);
     markPressed(ui.cmpKindButtons, prefs.kind);
     markPressed(ui.cmpWeatherButtons, prefs.weather);
     markPressed(ui.cmpBusButtons, prefs.buses ? 'on' : 'off');
     ui.cmpTraffic.value = String(prefs.traffic);
     showTraffic(ui.cmpTraffic, ui.cmpTrafficName, compareCapacity());
+  }
+
+  // Body class for the place, so Downtown-only controls (lights count, Stadium, Construction) hide elsewhere.
+  function showPlace() {
+    Sim.PLACES.forEach(function (p) { document.body.classList.toggle('place-' + p, p === prefs.place); });
+    if (kind === 'chill') ui.hint.textContent = chillHint();
+  }
+
+  function chillHint() {
+    return Sim.placeHasLights(prefs.place) ? 'Lights run themselves. Click one to take over.' : 'Stop signs and a roundabout; they run themselves.';
+  }
+
+  // Place buttons come from the sim's list, so a place shows up once it exists there.
+  // Compare races two light strategies, so it leaves out places without lights.
+  [ui.placeButtons, ui.cmpPlaceButtons].forEach(function (group) {
+    Sim.PLACES.forEach(function (p) {
+      if (group === ui.cmpPlaceButtons && !Sim.placeHasLights(p)) return;
+      var b = document.createElement('button');
+      b.dataset.value = p;
+      b.textContent = PLACE_NAMES[p];
+      group.appendChild(b);
+    });
+  });
+
+  // A new place is a new map, so the day starts again there.
+  function setPlace(value) {
+    prefs.place = value;
+    if (value !== 'downtown' && DOWNTOWN_KINDS.indexOf(prefs.kind) >= 0) prefs.kind = 'normal';
   }
 
   function markPressed(group, value) {
@@ -1035,6 +1185,8 @@
     ui.traffic.value = String(prefs.traffic);
     showTraffic(ui.traffic, ui.trafficName, chillCapacity());
     markPressed(ui.layoutButtons, prefs.lights);
+    markPressed(ui.placeButtons, prefs.place);
+    showPlace();
     markPressed(ui.strategyButtons, prefs.strategy);
     markPressed(ui.speedButtons, prefs.speed);
     markPressed(ui.sheetSpeedButtons, prefs.speed);
@@ -1042,7 +1194,8 @@
     markPressed(ui.kindButtons, prefs.kind);
     markPressed(ui.weatherButtons, prefs.weather);
     markPressed(ui.busButtons, prefs.buses ? 'on' : 'off');
-    ui.strategyNote.textContent = STRATEGY_NOTES[prefs.strategy];
+    var strategyNote = Sim.placeHasLights(prefs.place) ? STRATEGY_NOTES[prefs.strategy] : '';
+    ui.strategyNote.textContent = PLACE_NOTES[prefs.place] ? PLACE_NOTES[prefs.place] + ' ' + strategyNote : strategyNote;
     ui.kindNote.textContent = KIND_NOTES[prefs.kind];
     showTab(prefs.tab);
   }
@@ -1122,6 +1275,7 @@
   // Compare mode replaces the map and strip with two maps side by side. The pause card moves along.
   function enterCompare() {
     var hour = Sim.hourOfDay(game);
+    if (!Sim.placeHasLights(prefs.place)) setPlace('downtown');
     if (!prefs.compare) {
       // First time: map A is the city as you had it, map B the strategy most worth comparing it with.
       prefs.compare = {
@@ -1162,7 +1316,7 @@
   function enterChill(hour) {
     kind = 'chill';
     setModeClass('mode-chill');
-    ui.hint.textContent = 'Lights run themselves. Click one to take over.';
+    ui.hint.textContent = chillHint();
     ui.modeButton.textContent = 'Try challenge';
     game = newChillGame(hour);
     resetChart();
@@ -1305,6 +1459,13 @@
     });
   }
 
+  onSegment(ui.placeButtons, function (value) {
+    if (prefs.place === value) return;
+    setPlace(value);
+    game = newChillGame(Sim.hourOfDay(game));
+    resetChart();
+  });
+
   // A different number of lights redraws the city from scratch (and restarts the day).
   onSegment(ui.layoutButtons, function (value) {
     prefs.lights = Number(value);
@@ -1443,6 +1604,13 @@
     if (prefs.lights === Number(value)) return;
     prefs.lights = Number(value);
     restartCompare('Both maps restarted with ' + value + (value === '1' ? ' light' : ' lights'));
+    resize();
+  });
+
+  onCompareSegment(ui.cmpPlaceButtons, function (value) {
+    if (prefs.place === value) return;
+    setPlace(value);
+    restartCompare('Both maps moved to ' + PLACE_NAMES[value]);
     resize();
   });
 

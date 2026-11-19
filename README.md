@@ -6,8 +6,9 @@ more cars waiting.
 
 - **Chill (default):** nothing to lose. A day passes every 6 minutes (at 1×), with a morning
   and evening rush hour and a quiet night when the map dims to lamplight and cars get headlights.
-  The controls sit in three tabs: **Lights** (1, 2, 4 or 6 lights, how they decide: Smart, Timer or
-  Green wave, and left arrows), **Traffic** (how busy the city is, and what kind of day it is:
+  The controls sit in three tabs: **Lights** (the place: Downtown, Main Street, Suburb or
+  Crosstown, see Places; on Downtown, 1, 2, 4 or 6 lights; how they decide: Smart, Timer or
+  Green wave; and left arrows), **Traffic** (how busy the city is, and what kind of day it is:
   see Traffic kinds) and **Weather & extras** (weather, buses, send an ambulance: see below).
   Speed (1×/2×/4×) stays beside the tabs. Click any light to switch it yourself; the strategy leaves
   it alone for 8 seconds. The strip shows the average wait per trip and a chart of it. Settings
@@ -120,6 +121,56 @@ averaged over 3 seeds:
 Smart wins at light and normal traffic. Once the city is overloaded, Green wave's coordination
 between lights wins on 6 lights, which Smart (each light deciding alone) can't match.
 
+## Places
+
+The **Place** picker (top of the Lights tab) changes the map. Picking one starts that place at the
+same time of day. Downtown is the original grid, all lights, and it alone has the 1/2/4/6 choice
+and the Stadium and Construction days. The others have a fixed layout where each crossing has its
+own control, and signs and roundabouts run themselves (only lights can be clicked).
+
+- **Main Street:** one avenue with four side streets. The side streets have two-way stops onto it,
+  except a light at the busiest crossing; the quiet back street has all-way stops. Side streets
+  carry half the avenue's traffic per lane.
+- **Suburb:** no lights. Two through streets meet at a roundabout; where a through street crosses a
+  quiet one, the quiet one stops; quiet crossings are all-way stops. Quiet streets carry half the
+  traffic, and the day has a school run (a sharp morning peak and a smaller one mid-afternoon).
+  The light controls hide here, and Suburb isn't offered in compare mode (both maps would be the same).
+- **Crosstown:** two avenues meet at a big one-lane roundabout. Each avenue's outer lane ends before
+  it: where a light comes first, the lane is closed from that light on (hatched) and cars merge
+  before the light; from the edge, they zipper-merge on the way in. Lights where a side street meets
+  an avenue, all-way stops where two side streets meet. Avenues carry 0.6× traffic, since two lanes
+  squeeze into one at the circle.
+
+**Stop signs.** A car that has to stop stands at the line for 0.8 s first. At a two-way stop it then
+waits for the main road to be clear for 3 s both ways (a right turn only needs the near side, the
+traffic it merges into). At an all-way stop, cars go in the order they stopped: the first car's road
+goes next, and anyone stopped on that road may go with it, as at a real four-way stop. A car whose
+way out is full is skipped, so one blocked car can't hold up the crossing (that could chain around
+a block into gridlock). After that the usual rules apply: cross traffic must be out of the box,
+left turns need a gap, and nobody enters without a space on the far side.
+
+**Roundabouts.** Every way through is a drive counterclockwise round part of the circle. An entering
+car yields: nobody on the circle within 45 px upstream of its entry, and room to slot in. Cars on the
+circle keep their distance from the car ahead on it, whichever road it came from. As at every
+crossing, a car only enters if its way out has a space, so the circle can't lock up with cars that
+can't leave. Turns at a roundabout may lead onto a road with more crossings (elsewhere turns only
+lead straight out of the city, see Turning): every road out of the roundabout leads away from it,
+and no other crossing turns a car back toward it, so no circular wait can form.
+
+Bugs found while building these, for the record: a car waiting at its yield line was first counted
+as on the circle (circling cars waited for it while it waited for them); cars going round are
+measured along their curved path, so lane checks have to skip them; and merging between a light and
+the roundabout never worked, because each lane's stretch counts its own spaces and the inner lane's
+stayed full of moving cars.
+
+The traffic slider's capacity mark per place (see Waiting at the edge for how it's measured):
+
+| | Smart | Timer | Green wave |
+|---|---|---|---|
+| Main Street | 55 | 60 | 60 |
+| Suburb | 75 | 75 | 75 |
+| Crosstown | 60 | 55 | 55 |
+
 ## Traffic kinds
 
 The **Traffic** tab picks what kind of day it is. Picking one starts the day again (both maps, in
@@ -229,7 +280,7 @@ the same moment and wants the same turns in both cities. A single shared stream 
 lights draw extra random numbers for their offsets, which would shift every car after them.
 `compare-test.js` checks arrivals and first turns match exactly.
 
-**Changing a map's lights, or the number of lights, restarts both maps** from empty roads at the
+The place is shared too (Suburb, with no lights, isn't offered). **Changing a map's lights, the place, or the number of lights, restarts both maps** from empty roads at the
 same time of day, with new cars (a new traffic kind starts a new day). Switching one city mid-run would leave it with the other
 setup's queues, which isn't a fair race. Traffic and speed change both live.
 

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=0.11.0">
+<link rel="stylesheet" href="style.css?v=0.13.1">
 </head>
 <body class="mode-chill">
 <main class="game">
@@ -131,7 +131,11 @@
       </div>
 
       <div class="tab-panel" role="tabpanel" id="panelLights" aria-labelledby="tabLights" data-tab="lights">
-        <div class="control">
+        <div class="control kind-control">
+          <span class="label" id="placeLabel">Place</span>
+          <div class="segmented place-seg" role="group" aria-labelledby="placeLabel" id="placeButtons"></div>
+        </div>
+        <div class="control downtown-only">
           <span class="label" id="layoutLabel">Lights</span>
           <div class="segmented" role="group" aria-labelledby="layoutLabel" id="layoutButtons">
             <button data-value="1" aria-pressed="false">1</button>
@@ -140,7 +144,7 @@
             <button data-value="6" aria-pressed="false">6</button>
           </div>
         </div>
-        <div class="control">
+        <div class="control lights-only">
           <span class="label" id="strategyLabel">Lights run on</span>
           <div class="segmented" role="group" aria-labelledby="strategyLabel" id="strategyButtons">
             <button data-value="smart" aria-pressed="true">Smart</button>
@@ -148,7 +152,7 @@
             <button data-value="wave" aria-pressed="false">Green wave</button>
           </div>
         </div>
-        <div class="control">
+        <div class="control lights-only">
           <span class="label" id="arrowsLabel">Left arrows</span>
           <div class="segmented" role="group" aria-labelledby="arrowsLabel" id="arrowButtons">
             <button data-value="on" aria-pressed="true">On</button>
@@ -168,7 +172,7 @@
         <div class="control kind-control">
           <span class="label" id="kindLabel">Traffic kind</span>
           <div class="segmented kind-seg" role="group" aria-labelledby="kindLabel" id="kindButtons">
-            <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction">Construction</button>
+            <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium" class="downtown-only">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction" class="downtown-only">Construction</button>
           </div>
         </div>
         <p class="strategy-note" id="kindNote"></p>
@@ -320,7 +324,11 @@
               <button data-value="on">On</button><button data-value="off">Off</button>
             </div>
           </div>
-          <div class="control">
+          <div class="control kind-control">
+            <span class="label" id="cmpPlaceLabel">Place (both)</span>
+            <div class="segmented place-seg" role="group" aria-labelledby="cmpPlaceLabel" id="cmpPlaceButtons"></div>
+          </div>
+          <div class="control downtown-only">
             <span class="label" id="cmpLayoutLabel">Lights (both)</span>
             <div class="segmented" role="group" aria-labelledby="cmpLayoutLabel" id="cmpLayoutButtons">
               <button data-value="1">1</button><button data-value="2">2</button><button data-value="4">4</button><button data-value="6">6</button>
@@ -329,7 +337,7 @@
           <div class="control kind-control">
             <span class="label" id="cmpKindLabel">Traffic kind</span>
             <div class="segmented kind-seg" role="group" aria-labelledby="cmpKindLabel" id="cmpKindButtons">
-              <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction">Construction</button>
+              <button data-value="normal">Normal</button><button data-value="commute">Commute</button><button data-value="stadium" class="downtown-only">Stadium</button><button data-value="sunday">Sunday</button><button data-value="construction" class="downtown-only">Construction</button>
             </div>
           </div>
           <div class="control kind-control">
@@ -370,7 +378,7 @@
   </section>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 </main>
-<script src="sim.js?v=0.11.0"></script>
-<script src="game.js?v=0.11.0"></script>
+<script src="sim.js?v=0.13.1"></script>
+<script src="game.js?v=0.13.1"></script>
 </body>
 </html>

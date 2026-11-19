@@ -83,8 +83,15 @@
     arrowMax: 8,
     arrowTime: 4,
     arrowReach: 150,          // a left-turner this close to the line counts as waiting for an arrow
-    arrowAfterWait: 6         // ...once it has been stopped this many seconds (tested: 0 s cost
+    arrowAfterWait: 6,        // ...once it has been stopped this many seconds (tested: 0 s cost
                               // everyone a lot of waiting, 6 s keeps most of the benefit)
+    // Stop signs (places other than Downtown).
+    signStop: 0.8,            // seconds a car stands at a stop line before it may go
+    crossGap: 3,              // a car leaving a side-street stop sign needs the main road clear this many seconds
+    // Roundabouts: one lane, driven counterclockwise (traffic keeps right).
+    roundSpeed: 55,           // px/s on the circle
+    roundYield: 45,           // an entering car needs the circle clear this many px upstream of its entry
+    roundLane: 24             // width of the circle's lane
   };
 
   // How busy the city is at each hour, as a multiple of the traffic slider. Points are
@@ -142,6 +149,59 @@
     4: [['v', 0.3], ['v', 0.7], ['h', 0.34], ['h', 0.68]],
     6: [['v', 0.22], ['v', 0.5], ['v', 0.78], ['h', 0.34], ['h', 0.68]]
   };
+  // Suburb's day: a sharp school run in the morning, a smaller one mid-afternoon, a modest evening.
+  var SCHOOL_TRAFFIC = [
+    [0, 0.15], [5, 0.15], [6.5, 0.5], [7.5, 1.6], [8.5, 1.4], [9.25, 0.6], [12, 0.6], [14.75, 0.7],
+    [15.25, 1.3], [16, 0.8], [17.5, 1.1], [19, 0.7], [21, 0.4], [23, 0.2], [24, 0.15]
+  ];
+
+  // Places (chill and compare). Downtown is the 1/2/4/6-light grid above, all lights. The others
+  // have a fixed layout, and each crossing has its own control:
+  //   light   a traffic light, run by the strategy
+  //   stop2   two-way stop: the `major` axis never stops; the other stops, then waits for a gap
+  //   stop4   all-way stop: everyone stops; first to stop goes first (and those on the same road with it)
+  //   round   roundabout: entering cars yield to cars already on the circle
+  // Roads are [axis, pos, avenue, weight]; weight (default 1) scales that road's traffic.
+  // `streetWeight` scales traffic on every non-avenue lane. `control(vi, hi)` gets the crossing's index among the
+  // north-south roads (west to east) and east-west roads (north to south).
+  var PLACES = {
+    main: {
+      roads: [['v', 0.14], ['v', 0.38], ['v', 0.62], ['v', 0.86], ['h', 0.24], ['h', 0.62, true]],
+      streetWeight: 0.5,   // side streets carry half the avenue's traffic per lane
+      control: function (vi, hi) {
+        if (hi === 0) return { type: 'stop4' };
+        return vi === 2 ? { type: 'light' } : { type: 'stop2', major: 'ew' };
+      }
+    },
+    // Two through streets (the middle north-south one and the lower east-west one) meet at a
+    // roundabout; where a through street crosses a quiet one, the quiet one stops; quiet
+    // crossings are all-way stops. No lights at all.
+    suburb: {
+      day: SCHOOL_TRAFFIC,
+      roads: [['v', 0.22, false, 0.5], ['v', 0.52], ['v', 0.8, false, 0.5], ['h', 0.3, false, 0.5], ['h', 0.66]],
+      control: function (vi, hi) {
+        if (vi === 1 && hi === 1) return { type: 'round' };
+        if (vi === 1) return { type: 'stop2', major: 'ns' };
+        if (hi === 1) return { type: 'stop2', major: 'ew' };
+        return { type: 'stop4' };
+      }
+    },
+    // Two avenues cross at a roundabout. Its circle has one lane, so each avenue's outer lane ends
+    // just before it and traffic merges. Lights where a side street meets an avenue, all-way stops
+    // where two side streets meet.
+    crosstown: {
+      // Avenues at 0.6: two lanes each way squeeze into one at the circle, so full avenue traffic
+      // overloaded it at light traffic.
+      roads: [['v', 0.17], ['v', 0.5, true, 0.6], ['v', 0.83], ['h', 0.24], ['h', 0.64, true, 0.6]],
+      control: function (vi, hi) {
+        if (vi === 1 && hi === 1) return { type: 'round' };
+        if (vi === 1 || hi === 1) return { type: 'light' };
+        return { type: 'stop4' };
+      }
+    }
+  };
+  var PLACE_NAMES = ['downtown', 'main', 'suburb', 'crosstown'];
+
   var HEADING = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
 
   // Which axis each travel direction uses, and which edge it enters from.
@@ -214,10 +274,13 @@
 
   // A relaxed game: all roads for the chosen layout are open from the start.
   function createChill(lights, traffic, options) {
-    var layout = LAYOUTS[lights] || LAYOUTS[4];
+    var place = options && PLACES[options.place] ? options.place : 'downtown';
+    var schedule = place === 'downtown'
+      ? (LAYOUTS[lights] || LAYOUTS[4]).map(function (r) { return { at: 0, axis: r[0], pos: r[1], avenue: r[0] === 'h' }; })
+      : PLACES[place].roads.map(function (r) { return { at: 0, axis: r[0], pos: r[1], avenue: !!r[2], weight: r[3] || 1 }; });
     var kind = options && KINDS.indexOf(options.kind) >= 0 ? options.kind : 'normal';
     var g = createGame(Object.assign({}, kind === 'sunday' ? SUNDAY_TURNS : {}, options, {
-      roadSchedule: layout.map(function (r) { return { at: 0, axis: r[0], pos: r[1], avenue: r[0] === 'h' }; })
+      roadSchedule: schedule, place: place
     }));
     g.chill = true;
     g.traffic = traffic;
@@ -261,7 +324,7 @@
   // Bus lanes and their stops: one stop in the middle of each block that's long enough.
   function setUpBuses(g) {
     g.lanes.forEach(function (lane) {
-      if (!lane.road.avenue || lane.position !== 'curb' || lane.stops.some(function (st) { return st.closed; })) return;
+      if (!lane.road.avenue || lane.position !== 'curb' || lane.stops.some(function (st) { return st.closed || st.laneEnds; })) return;
       var edges = [0];
       lane.stops.forEach(function (st) { edges.push(st.line, st.boxEnd); });
       edges.push(lane.length);
@@ -429,7 +492,7 @@
       var size = r.axis === 'v' ? g.cfg.width : g.cfg.height;
       var avenue = !!r.avenue;
       var road = {
-        axis: r.axis, c: Math.round(r.pos * size), avenue: avenue,
+        axis: r.axis, c: Math.round(r.pos * size), avenue: avenue, weight: r.weight || 1,
         // Half the road's width: two 28 px lanes for a street, four lanes plus a median for an avenue.
         half: avenue ? g.cfg.avenueMedian / 2 + 2 * g.cfg.avenueLaneWidth : g.cfg.roadWidth / 2
       };
@@ -441,7 +504,10 @@
     opened.forEach(function (road) { addLanes(g, road); });
     rebuildIntersections(g, opened);
     // Busier and quieter lanes change whenever the map changes, so the player has to rebalance.
-    g.lanes.forEach(function (lane) { lane.weight = 0.6 + g.rng() * 0.8; });
+    var place = PLACES[g.cfg.place];
+    g.lanes.forEach(function (lane) {
+      lane.weight = (0.6 + g.rng() * 0.8) * lane.road.weight * (place && place.streetWeight && !lane.road.avenue ? place.streetWeight : 1);
+    });
     if (g.time > 0) g.events.push({ type: 'road' });
   }
 
@@ -489,6 +555,25 @@
     });
   }
 
+  function placeHasLights(name) {
+    var place = PLACES[name];
+    if (!place) return true;
+    var nv = place.roads.filter(function (r) { return r[0] === 'v'; }).length, nh = place.roads.length - nv;
+    for (var vi = 0; vi < nv; vi++) for (var hi = 0; hi < nh; hi++) if (place.control(vi, hi).type === 'light') return true;
+    return false;
+  }
+
+  // What controls the crossing of roads `v` and `h`: a light unless the place says otherwise.
+  function controlAt(g, v, h) {
+    var place = PLACES[g.cfg.place];
+    if (!place) return { type: 'light' };
+    var vs = g.roads.filter(function (r) { return r.axis === 'v'; }).sort(function (a, b) { return a.c - b.c; });
+    var hs = g.roads.filter(function (r) { return r.axis === 'h'; }).sort(function (a, b) { return a.c - b.c; });
+    return place.control(vs.indexOf(v), hs.indexOf(h));
+  }
+
+  function isLight(l) { return l.control === 'light'; }
+
   function rebuildIntersections(g, opened) {
     var cfg = g.cfg;
     var byKey = {};
@@ -506,8 +591,15 @@
           var newIsVertical = opened.indexOf(v) >= 0 && opened.indexOf(hr) < 0;
           var newIsHorizontal = opened.indexOf(hr) >= 0 && opened.indexOf(v) < 0;
           var axis = newIsVertical ? 'ew' : newIsHorizontal ? 'ns' : (g.rng() < 0.5 ? 'ns' : 'ew');
+          var spec = controlAt(g, v, hr);
+          // A roundabout's circle: its lane's centre line runs `ring` px out, clear of both roads,
+          // and the whole thing (to the outer kerb) fills a box `rb` px each way from the centre.
+          var ring = Math.max(v.half, hr.half) + 12, rb = ring + cfg.roundLane / 2;
+          var round = spec.type === 'round';
           light = {
-            key: key, x: v.c, y: hr.c, hx: v.half, hy: hr.half, axis: axis, phase: 'green', timer: 0, greenFor: 0,
+            key: key, x: v.c, y: hr.c, hx: round ? rb : v.half, hy: round ? rb : hr.half, axis: axis, phase: 'green', timer: 0, greenFor: 0,
+            ring: round ? ring : 0,
+            control: spec.type, major: spec.major || null, queue: [],
             busy: { ns: false, ew: false }, leftIn: {}, throughIn: {}, incoming: {},
             avenue: hr.avenue      // east-west avenue here, so this light can show a left-turn arrow
           };
@@ -523,7 +615,9 @@
     g.lanes.forEach(function (lane) {
       var crossing = lane.axis === 'ew' ? vRoads : hRoads;
       lane.stops = crossing.map(function (road) {
-        var start, end, h = road.half;
+        var start, end;
+        var key0 = lane.axis === 'ew' ? road.c + ',' + lane.road.c : lane.road.c + ',' + road.c;
+        var h = byKey[key0] && byKey[key0].control === 'round' ? byKey[key0].hx : road.half;
         if (lane.dir === 'E' || lane.dir === 'S') {
           start = road.c - h; end = road.c + h;
         } else {
@@ -532,6 +626,15 @@
         var key = lane.axis === 'ew' ? road.c + ',' + lane.road.c : lane.road.c + ',' + road.c;
         return { line: start - cfg.stopGap, boxStart: start, boxEnd: end, light: byKey[key] };
       }).sort(function (a, b) { return a.line - b.line; });
+      // An avenue's curb lane ends just before a roundabout (its circle has one lane): cars merge.
+      // Where a light comes first, the lane closes from that light on (like Construction), so cars
+      // merge before the light. Merging between the light and the roundabout didn't work: the
+      // stretch's space count is per lane, and the inner lane's stretch stayed full of cars on
+      // their way round, so a merging car was never given a space and sat there all day.
+      lane.stops.forEach(function (stop, i) {
+        stop.laneEnds = stop.light.control === 'round' && lane.position === 'curb';
+        if (stop.laneEnds && i > 0) lane.stops[i - 1].closed = true;
+      });
       // How many cars fit between this intersection and the next stop line (the map edge for the last one).
       lane.stops.forEach(function (stop, i) {
         var next = lane.stops[i + 1];
@@ -564,6 +667,16 @@
           return l.road === lane.road && l.dir === OPPOSITE[lane.dir];
         }).map(function (l) { return { lane: l, stop: stopFor(l, light) }; });
         stop.turns = {};
+        if (light.control === 'round') {
+          // Every way through a roundabout is a drive around part of the circle. Leave into the
+          // curb lane of an avenue (the outer lane, nearest the circle).
+          [['left', LEFT_OF[lane.dir], crossRoad], ['right', RIGHT_OF[lane.dir], crossRoad], ['straight', lane.dir, lane.road]].forEach(function (t) {
+            var to = laneAt(t[2], t[1], 'right');
+            var toStop = to && stopFor(to, light);
+            if (to && toStop) stop.turns[t[0]] = { lane: to, stop: toStop, arc: makeRoundPath(light, lane, stop, to, toStop) };
+          });
+          return;
+        }
         [['left', LEFT_OF], ['right', RIGHT_OF]].forEach(function (t) {
           var to = laneAt(crossRoad, t[1][lane.dir], t[0]);
           var toStop = to && stopFor(to, light);
@@ -583,7 +696,7 @@
   // ---------------------------------------------------------------- lights
 
   function flip(g, light) {
-    if (g.over || !light || (light.phase !== 'green' && light.phase !== 'arrow')) return false;
+    if (g.over || !light || !isLight(light) || (light.phase !== 'green' && light.phase !== 'arrow')) return false;
     light.phase = 'amber';
     light.timer = g.cfg.amberTime;
     return true;
@@ -592,6 +705,7 @@
   // Light phases, in order: green -> amber -> allred -> (arrow ->) green the other way.
   function updateLights(g, dt) {
     g.lights.forEach(function (l) {
+      if (!isLight(l)) return;
       if (l.phase === 'green') {
         l.greenFor += dt;
         return;
@@ -633,6 +747,7 @@
   function lightAt(g, x, y, radius) {
     var best = null, bestD = radius * radius;
     g.lights.forEach(function (l) {
+      if (!isLight(l)) return;
       var d = (l.x - x) * (l.x - x) + (l.y - y) * (l.y - y);
       if (d <= bestD) { best = l; bestD = d; }
     });
@@ -688,6 +803,7 @@
   function makePlan(g, lane, s, forced, rng) {
     var stop = nextStop(lane, s);
     if (!stop) return null;
+    if (stop.light.control === 'round') return roundPlan(g, stop, forced, rng);
     var turn = forced || 'straight';
     if (!forced && g.chill) {
       var cfg = g.cfg;
@@ -711,10 +827,30 @@
     return { stop: stop, turn: turn, target: t.lane, targetStop: t.stop, arc: t.arc };
   }
 
+  // At a roundabout every car drives the circle (turn 'round'); `exit` says where it leaves.
+  // Turning onto a road that meets more crossings is allowed here, unlike at other crossings: the
+  // gridlock argument above needs every turn to lead away from where it came from, and every road
+  // out of a roundabout does (no other crossing turns a car onto a road back toward it).
+  function roundPlan(g, stop, forced, rng) {
+    var exit = forced && forced !== 'straight' ? forced : 'straight';
+    if (!forced && g.chill) {
+      var cfg = g.cfg, r = (rng || g.rng)();
+      if (r < cfg.turnLeft && stop.turns.left) exit = 'left';
+      else if (r < cfg.turnLeft + cfg.turnRight && stop.turns.right) exit = 'right';
+    }
+    var t = stop.turns[exit] || stop.turns.straight;
+    if (!t) return { stop: stop, turn: 'straight' };
+    return { stop: stop, turn: 'round', exit: exit, target: t.lane, targetStop: t.stop, arc: t.arc };
+  }
+
   function turnLane(lane, turn) {
     if (!lane.sibling) return lane;
     var want = turn === 'left' ? 'inner' : 'curb';
     return lane.position === want ? lane : lane.sibling;
+  }
+
+  function onCircle(car) {
+    return !!car.plan && car.plan.turn === 'round' && car.s > car.plan.stop.line;
   }
 
   // A car that has crossed the stop line and is driving its curve (until it joins the new lane).
@@ -728,11 +864,17 @@
   // ahead, so it could catch a slow car there) and any car ahead of it on the same curve.
   function findLeader(cars, i, car) {
     var plan = car.plan;
-    if (!plan || plan.turn === 'straight') return i > 0 ? cars[i - 1] : null;
+    if (!plan || plan.turn === 'straight') {
+      // A car going round a roundabout is measured along its path, not this lane: skip it.
+      for (var k = i - 1; k >= 0; k--) if (!onCircle(cars[k])) return cars[k];
+      return null;
+    }
     for (var j = i - 1; j >= 0; j--) {
       var other = cars[j];
       var sameCurve = other.plan && other.plan.stop === plan.stop && other.plan.turn === plan.turn;
-      if (sameCurve || other.s - other.len < plan.stop.boxEnd) return other;
+      if (sameCurve) return other;
+      if (onCircle(other)) continue;   // measured along its own path, not this lane
+      if (other.s - other.len < plan.stop.boxEnd) return other;
     }
     return null;
   }
@@ -773,6 +915,8 @@
   function mayEnter(g, lane, stop, car) {
     var cfg = g.cfg, light = stop.light, plan = car.plan;
     var opposite = OPPOSITE[lane.dir];
+    if (light.control === 'stop2' || light.control === 'stop4') return mayEnterSign(g, lane, stop, car);
+    if (light.control === 'round') return !stop.laneEnds && plan.turn === 'round' && hasSpace(plan.target, plan.targetStop) && roundClear(g, light, plan.arc, car);
     if (light.axis !== lane.axis || light.phase === 'allred') return false;
     if (light.phase === 'arrow') {
       // Only avenue left turns go on the arrow. Oncoming traffic is held, so no gap is needed,
@@ -803,12 +947,131 @@
     return hasSpace(plan.target, plan.targetStop);
   }
 
+  // Stop signs. A car that has to stop must stand at the line for `signStop` seconds first. Then:
+  //  two-way stop: the main road must be clear for `crossGap` seconds both ways (main-road cars
+  //    never stop, so the side street waits for a real gap, like real drivers do);
+  //  all-way stop: cars go in the order they stopped. The car that stopped first picks the road
+  //    that goes next, and anyone stopped on that road may go with it (opposite cars pass each
+  //    other, as at a real four-way stop). A car whose way out is full is skipped, so one blocked
+  //    car can't hold up the whole crossing (that could chain around a block into gridlock).
+  // After that, the same rules as a green light: the box must be clear of cross traffic, left
+  // turns need a gap, and nobody enters without a guaranteed space on the far side.
+  function mayEnterSign(g, lane, stop, car) {
+    var cfg = g.cfg, light = stop.light, plan = car.plan, opposite = OPPOSITE[lane.dir];
+    var cross = lane.axis === 'ns' ? 'ew' : 'ns';
+    var mustStop = light.control === 'stop4' || lane.axis !== light.major;
+    if (mustStop && (car.lineWait || 0) < cfg.signStop) return false;
+    if (light.control === 'stop4' && stop4Axis(light) !== lane.axis) return false;
+    // A right turn only merges into the near side, so only traffic coming from the left matters.
+    if (light.control === 'stop2' && mustStop && !crossClear(g, light, cross, plan.turn === 'right' ? RIGHT_OF[lane.dir] : null)) return false;
+    if (light.busy[cross] || light.leftIn[opposite]) return false;
+    if (plan.turn === 'left' && (light.throughIn[opposite] || !gapClear(g, stop))) return false;
+    if (plan.turn === 'straight') return hasSpace(lane, stop, car.slots);
+    return hasSpace(plan.target, plan.targetStop);
+  }
+
+  // ---- roundabouts
+  //
+  // Each car on a roundabout is placed on the circle by an angle-like "progress" u (radians,
+  // growing the way cars drive). Cars on their way in or out count too, a bit before or after
+  // their own entry and exit points, so a car always sees what is about to share its piece of road.
+  function ringU(arc, d) {
+    var R = arc.R;
+    if (d < arc.ringStart) return arc.uIn - (arc.ringStart - d) / R;
+    if (d <= arc.ringEnd) return arc.uIn + (d - arc.ringStart) / R;
+    return arc.uIn + arc.sweep + (d - arc.ringEnd) / R;
+  }
+
+  function mod2pi(a) { a %= 2 * Math.PI; return a < 0 ? a + 2 * Math.PI : a; }
+
+  // Everyone on (or just entering or leaving) this roundabout: front and rear progress.
+  function ringCars(g, light) {
+    if (light.ringStamp === g.time) return light.ringList;
+    var list = [];
+    g.lanes.forEach(function (lane) {
+      lane.cars.forEach(function (c) {
+        var p = c.plan;
+        if (!p || p.turn !== 'round' || p.stop.light !== light) return;
+        // Only cars past their yield line: one waiting there isn't on the circle yet, and counting
+        // it made the cars going round wait for it while it waited for them.
+        var d = c.s - p.stop.boxStart;
+        if (c.s <= p.stop.line || d - c.len > p.arc.ringEnd + 10) return;
+        var u = ringU(p.arc, d);
+        list.push({ car: c, front: u, rear: u - c.len / p.arc.R });
+      });
+    });
+    light.ringStamp = g.time;
+    light.ringList = list;
+    return list;
+  }
+
+  // May a car enter here? Nobody on the circle within `roundYield` px upstream of the entry, and
+  // nobody's rear just past it (room to slot in).
+  function roundClear(g, light, arc, car) {
+    var list = ringCars(g, light), R = arc.R, cfg = g.cfg;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.car === car) continue;
+      var upstream = mod2pi(arc.uIn - o.rear) * R;          // entry point ahead of the other car's rear
+      if (upstream < o.car.len + cfg.roundYield) return false;
+      var ahead = mod2pi(o.rear - arc.uIn) * R;             // the other car's rear past the entry
+      if (ahead < car.len + cfg.minGap) return false;
+    }
+    return true;
+  }
+
+  // The furthest a car on the circle may go (in its own s): up to the nearest rear ahead of it.
+  function ringLimit(g, car) {
+    var p = car.plan, arc = p.arc, list = ringCars(g, p.stop.light);
+    var d = car.s - p.stop.boxStart, front = ringU(arc, d), best = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.car === car) continue;
+      var gap = mod2pi(o.rear - front) * arc.R;
+      // Only cars ahead on the circle, not ones just behind (whose rear wraps round to look far ahead).
+      if (gap < 2 * Math.PI * arc.R - car.len - 4 && gap < best) best = gap;
+    }
+    return best === Infinity ? Infinity : car.s + best - g.cfg.minGap;
+  }
+
+  // Which road goes next at an all-way stop: the road of the first car in line that has room to go.
+  function stop4Axis(light) {
+    for (var i = 0; i < light.queue.length; i++) {
+      var q = light.queue[i], p = q.car.plan;
+      var ok = p.turn === 'straight' ? hasSpace(q.lane, q.stop, q.car.slots) : hasSpace(p.target, p.targetStop);
+      if (ok) return q.lane.axis;
+    }
+    return null;
+  }
+
+  // Nothing on the main road in the box or due at it within `crossGap` seconds (only lanes heading
+  // `onlyDir`, if given).
+  function crossClear(g, light, axis, onlyDir) {
+    if (light.busy[axis]) return false;
+    for (var k = 0; k < g.lanes.length; k++) {
+      var lane = g.lanes[k];
+      if (lane.axis !== axis || (onlyDir && lane.dir !== onlyDir)) continue;
+      var stop = null;
+      for (var j = 0; j < lane.stops.length; j++) if (lane.stops[j].light === light) stop = lane.stops[j];
+      if (!stop) continue;
+      for (var i = 0; i < lane.cars.length; i++) {
+        var c = lane.cars[i], d = stop.line - c.s;
+        if (d < -0.001) continue;
+        if (d < c.len + 10 || (c.v > 5 && d < c.v * g.cfg.crossGap)) return false;
+      }
+    }
+    return true;
+  }
+
   // Can a car at the end of its curve slot into the new lane right now? It would sit just past
   // the box, so nothing on that lane may be within a car length (plus the usual gap) of there.
   function roomToJoin(g, car) {
     var lane = car.plan.target, at = car.plan.targetStop.boxEnd, gap = g.cfg.minGap;
     for (var i = 0; i < lane.cars.length; i++) {
       var c = lane.cars[i];
+      // Going straight through a roundabout on a one-lane street ends on the lane it started on.
+      // Cars still going round are measured along their path, not this lane, so they don't count.
+      if (c === car || onCircle(c)) continue;
       if (c.s > at - car.len - gap && c.s - c.len < at + gap) return false;
     }
     return true;
@@ -832,13 +1095,27 @@
         });
       }
       var approaching = plan && car.s <= plan.stop.line + 0.001;
+      // Zipper merge: where the other lane ends (or is closed past the next light), let in the merging car
+      // just ahead. Without this the two queues sat side by side and the ending lane never got a gap.
+      // Only when this lane's stretch has a space for it: the merging car can't move over without
+      // one, and holding back then would only stop the car whose going frees one.
+      if (approaching && lane.sibling && !plan.stop.laneEnds && roomToMerge(lane, car.s)) {
+        var merger = null;
+        lane.sibling.cars.forEach(function (c) {
+          var ends = c.plan && (c.plan.stop.laneEnds || (c.plan.stop.closed && c.plan.turn === 'straight' && !c.plan.want));
+          // Only a car it can still stop fully behind: one already alongside goes first instead.
+          if (c.s - c.len - cfg.minGap >= car.s && c.s <= plan.stop.line + 0.5 && ends && (!merger || c.s < merger.s)) merger = c;
+        });
+        if (merger) limit = Math.min(limit, merger.s - merger.len - cfg.minGap);
+      }
       if (approaching && !mayEnter(g, lane, plan.stop, car)) limit = Math.min(limit, plan.stop.line);
       if (car.bus) limit = Math.min(limit, busStopLimit(lane, car, dt));
 
       var wx = g.wx, brake = cfg.brake * wx.brake;
       var maxSpeed = lane.maxSpeed * wx.speed * (car.bus ? BUS_SPEED : car.ambulance ? AMBULANCE_SPEED : 1);
+      if (plan && plan.turn === 'round' && car.s > plan.stop.line) limit = Math.min(limit, ringLimit(g, car));
       if (plan && plan.turn !== 'straight') {
-        var cornerSpeed = (plan.turn === 'left' ? cfg.leftTurnSpeed : cfg.rightTurnSpeed) * wx.speed;
+        var cornerSpeed = (plan.turn === 'round' ? cfg.roundSpeed : plan.turn === 'left' ? cfg.leftTurnSpeed : cfg.rightTurnSpeed) * wx.speed;
         var curveEnd = plan.stop.boxStart + plan.arc.len;
         if (car.s > plan.stop.boxStart) {
           maxSpeed = cornerSpeed;
@@ -858,6 +1135,13 @@
 
       var before = car.s;
       car.s = Math.min(car.s + car.v * dt, Math.max(car.s, limit));
+      // Time standing at a stop sign's line; at an all-way stop, that's what joins the line to go.
+      if (approaching && plan.stop.light.control !== 'light' && plan.stop.line - car.s < 3 && car.v < 5) {
+        var was = car.lineWait || 0;
+        car.lineWait = was + dt;
+        var sl = plan.stop.light;
+        if (sl.control === 'stop4' && was < cfg.signStop && car.lineWait >= cfg.signStop) sl.queue.push({ car: car, lane: lane, stop: plan.stop });
+      }
       if (car.v < 10 && !car.dwell) {
         car.wait += dt;
         car.totalWait += dt;
@@ -866,7 +1150,9 @@
         // Through the light: waiting time is per light, so it resets. Mark the box right away so
         // cars checking later in this same step see this car in it.
         car.wait = 0;
+        car.lineWait = 0;
         var L = plan.stop.light;
+        if (L.queue.length) L.queue = L.queue.filter(function (q) { return q.car !== car; });
         L.busy[lane.axis] = true;
         if (plan.turn === 'left') L.leftIn[lane.dir] = true;
         else L.throughIn[lane.dir] = true;
@@ -941,7 +1227,7 @@
     joins.forEach(function (j) {
       var car = j.car, plan = car.plan, lane = plan.target;
       // The curve may end a little off the new lane's heading; ease that out instead of snapping.
-      var end = curvePoint(plan.arc, 1), d = end.angle - lanePoint(lane, 0).angle;  // heading at the curve's end
+      var end = pathPoint(plan.arc, plan.arc.len), d = end.angle - lanePoint(lane, 0).angle;  // heading at the curve's end
       car.settle = Math.atan2(Math.sin(d), Math.cos(d));
       j.from.cars.splice(j.from.cars.indexOf(car), 1);
       car.s = plan.targetStop.boxEnd;
@@ -968,6 +1254,12 @@
     return best;
   }
 
+  // Could a car move into `lane` at `s` as far as the stretch's space count goes?
+  function roomToMerge(lane, s) {
+    var behind = stopBehind(lane, s);
+    return behind === null || hasSpace(lane, lane.stops[behind]);
+  }
+
   // The stop a car has already passed on this lane (null on the stretch before the first light).
   function stopBehind(lane, s) {
     var last = null;
@@ -984,7 +1276,7 @@
       var c = target.cars[i];
       if (c.s >= car.s) {
         if (c.s - c.len - car.s < cfg.minGap + 4) return false;
-      } else if (car.s - car.len - c.s < cfg.minGap + c.v * 0.6) {
+      } else if (car.s - car.len - c.s < cfg.minGap - 0.5 + c.v * 0.6) {
         return false;
       }
     }
@@ -1011,7 +1303,7 @@
         if (!plan || isTurning(car)) return;
         // The stretch past the next light is closed: a car going straight there has to merge,
         // even right at the line (it waits there for a gap in the other lane).
-        if (plan.turn === 'straight' && !plan.want && plan.stop.closed) {
+        if ((plan.turn === 'straight' && !plan.want && plan.stop.closed) || plan.stop.laneEnds) {
           moves.push({ car: car, from: lane, reason: 'merge' });
           return;
         }
@@ -1022,14 +1314,14 @@
         }
         var reason = null;
         var over = nextStop(lane.sibling, car.s);
-        if (car.aside && plan.turn === 'straight' && !plan.want && !(over && over.closed)) reason = 'pass';
+        if (car.aside && plan.turn === 'straight' && !plan.want && !(over && (over.closed || over.laneEnds))) reason = 'pass';
         else if (plan.want) reason = 'turn';
         else if (plan.turn === 'straight' && car.cooldown <= 0 && car.v < 0.6 * lane.maxSpeed) {
           // Stuck behind a slow or stopped car (often a waiting left-turner), with clearly more
           // room in the other lane: pass.
           var here = roomAhead(lane, i, car), there = roomAheadIn(lane.sibling, car.s);
           var ahead = nextStop(lane.sibling, car.s);
-          if (here < 50 && there > here + 60 && !(ahead && ahead.closed)) reason = 'pass';
+          if (here < 50 && there > here + 60 && !(ahead && (ahead.closed || ahead.laneEnds))) reason = 'pass';
         }
         if (reason) moves.push({ car: car, from: lane, reason: reason });
       });
@@ -1046,7 +1338,9 @@
       car.shiftFrom = from.coord - to.coord;
       car.shiftTime = cfg.laneChangeTime;
       car.cooldown = cfg.laneChangeCooldown;
-      car.plan = makePlan(g, to, car.s, m.reason === 'turn' ? car.plan.want : 'straight');
+      // Merging toward a roundabout, the car picks its exit there from its own random stream.
+      var next = nextStop(to, car.s);
+      car.plan = makePlan(g, to, car.s, m.reason === 'turn' ? car.plan.want : next && next.light.control === 'round' ? null : 'straight', car.rng);
       (from.ghosts = from.ghosts || []).push(car);
     });
   }
@@ -1057,7 +1351,8 @@
       var hour = hourOfDay(g);
       if (g.kind === 'sunday') return g.traffic * curveAt(SUNDAY_TRAFFIC, hour);
       if (g.kind === 'stadium') return g.traffic * dayTraffic(hour) * STADIUM_DAY;
-      return g.traffic * dayTraffic(hour);
+      var place = PLACES[g.cfg.place];
+      return g.traffic * (place && place.day ? curveAt(place.day, hour) : dayTraffic(hour));
     }
     return Math.min(cfg.spawnMax, cfg.spawnBase + cfg.spawnGrowth * g.time);
   }
@@ -1165,7 +1460,7 @@
   function carPoint(lane, car, back) {
     var s = car.s - back, plan = car.plan;
     if (plan && plan.turn !== 'straight' && s > plan.stop.boxStart) {
-      return curvePoint(plan.arc, curveT(plan.arc, s - plan.stop.boxStart));
+      return pathPoint(plan.arc, s - plan.stop.boxStart);
     }
     var p = lanePoint(lane, s);
     if (car.settle) p.angle += car.settle;
@@ -1183,6 +1478,7 @@
   // for a lane change it wants to make, and while changing lanes.
   function signal(lane, car, within) {
     var plan = car.plan;
+    if (plan && plan.turn === 'round') return car.s < plan.stop.line && car.s > plan.stop.line - within && plan.exit !== 'straight' ? plan.exit : null;
     if (plan && plan.turn !== 'straight' && car.s > plan.stop.line - within) return plan.turn;
     if (plan && plan.want) return plan.want === 'left' ? 'left' : 'right';
     if (car.shift > 0.15) {
@@ -1228,6 +1524,64 @@
       prev = p;
     }
     return arc;
+  }
+
+  // Point and heading `d` px along a turn's path: a Bézier curve, or a roundabout's sampled path.
+  function pathPoint(arc, d) {
+    if (!arc.pts) return curvePoint(arc, curveT(arc, d));
+    var pts = arc.pts, dist = arc.dist;
+    if (d <= 0) return pts[0];
+    if (d >= arc.len) return pts[pts.length - 1];
+    var lo = 0, hi = dist.length - 1;
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (dist[mid] < d) lo = mid; else hi = mid; }
+    var a = pts[lo], b = pts[hi], f = (d - dist[lo]) / (dist[hi] - dist[lo]);
+    var da = b.angle - a.angle;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, angle: a.angle + da * f };
+  }
+
+  // The path through a roundabout: a smooth bend from the lane onto the circle, counterclockwise
+  // round it, and a bend off onto the new lane. Entry and exit points sit a little round the
+  // circle from the road's centre line toward the lane's own side (`delta`), so the bends are gentle.
+  // Screen y points down, so counterclockwise on screen means the angle shrinks.
+  function makeRoundPath(light, fromLane, fromStop, toLane, toStop) {
+    var R = light.ring, cx = light.x, cy = light.y;
+    var p0 = lanePoint(fromLane, fromStop.boxStart), p2 = lanePoint(toLane, toStop.boxEnd);
+    var inSide = HEADING[fromLane.dir] + Math.PI, outSide = HEADING[toLane.dir];
+    var offIn = Math.abs(fromLane.axis === 'ew' ? fromLane.coord - cy : fromLane.coord - cx);
+    var offOut = Math.abs(toLane.axis === 'ew' ? toLane.coord - cy : toLane.coord - cx);
+    var thIn = inSide - (Math.asin(Math.min(0.9, offIn / R)) + 0.15);
+    var thOut = outSide + Math.asin(Math.min(0.9, offOut / R));
+    var sweep = mod2pi(thIn - thOut);
+    if (sweep < 0.3) sweep += 2 * Math.PI;
+    var ring = function (th) { return { x: cx + R * Math.cos(th), y: cy + R * Math.sin(th) }; };
+    var tangent = function (th) { return { x: Math.sin(th), y: -Math.cos(th) }; };
+    var pts = [];
+    // Cubic Hermite bends: start and end points with their headings.
+    function bend(a, ta, b, tb) {
+      var k = Math.hypot(b.x - a.x, b.y - a.y) * 1.1;
+      for (var i = 0; i <= 12; i++) {
+        var t = i / 12, t2 = t * t, t3 = t2 * t;
+        var h1 = 2 * t3 - 3 * t2 + 1, h2 = t3 - 2 * t2 + t, h3 = -2 * t3 + 3 * t2, h4 = t3 - t2;
+        pts.push({ x: h1 * a.x + h2 * k * ta.x + h3 * b.x + h4 * k * tb.x, y: h1 * a.y + h2 * k * ta.y + h3 * b.y + h4 * k * tb.y });
+      }
+    }
+    var head = function (dir) { return { x: Math.cos(HEADING[dir]), y: Math.sin(HEADING[dir]) }; };
+    bend(p0, head(fromLane.dir), ring(thIn), tangent(thIn));
+    var startIdx = pts.length - 1, steps = Math.max(6, Math.ceil(sweep * R / 4));
+    for (var i = 1; i <= steps; i++) pts.push(ring(thIn - sweep * i / steps));
+    var endIdx = pts.length - 1;
+    pts.pop();
+    bend(ring(thOut), tangent(thOut), p2, head(toLane.dir));
+    // Headings from neighbouring points, and distance along the path.
+    var dist = [0], len = 0;
+    for (var j = 0; j < pts.length; j++) {
+      var a = pts[Math.max(0, j - 1)], b = pts[Math.min(pts.length - 1, j + 1)];
+      pts[j].angle = Math.atan2(b.y - a.y, b.x - a.x);
+      if (j > 0) { len += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y); dist.push(len); }
+    }
+    return { pts: pts, dist: dist, len: len, R: R, uIn: -thIn, sweep: sweep,
+      ringStart: dist[startIdx], ringEnd: dist[endIdx] };
   }
 
   // The t on the curve that lies `d` px from its start.
@@ -1337,7 +1691,7 @@
     // Timer lights start switching early so the new green begins on schedule after amber + all-red.
     var lead = cfg.amberTime + cfg.allRedTime;
     g.lights.forEach(function (l) {
-      if (g.time < (l.holdUntil || 0)) return;
+      if (!isLight(l) || g.time < (l.holdUntil || 0)) return;
       // Smart lights end the arrow early once the left-turners have gone.
       if (l.phase === 'arrow' && g.strategy === 'smart' && l.greenFor >= cfg.arrowMin && !leftTurnersWaiting(g, l)) {
         l.phase = 'green';
@@ -1375,6 +1729,7 @@
     createGame: createGame,
     createChill: createChill,
     carPoint: carPoint,
+    lanePoint: lanePoint,
     signal: signal,
     setTraffic: setTraffic,
     setStrategy: setStrategy,
@@ -1387,6 +1742,10 @@
     waitingToEnter: waitingToEnter,
     resetTally: resetTally,
     KINDS: KINDS,
+    PLACES: PLACE_NAMES,
+    // Does this place have any lights (so the light strategy matters)?
+    placeHasLights: placeHasLights,
+    isLight: isLight,
     kindNote: kindNote,
     currentWeather: currentWeather,
     sendAmbulance: sendAmbulance,
