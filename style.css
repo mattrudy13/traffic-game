@@ -312,10 +312,28 @@ body.mode-challenge .chill-only { display: none; }
 #traffic {
   width: 150px;
   margin: 0;
-  accent-color: var(--ink);
   cursor: pointer;
 }
 #trafficName { min-width: 64px; }
+#trafficName.over, #cmpTrafficName.over { color: var(--danger); font-weight: 600; }
+
+/* The traffic sliders draw their own track so the part past capacity can be shaded.
+   game.js sets --range to a gradient: filled to the thumb, then the over-capacity zone. */
+#traffic, #cmpTraffic { -webkit-appearance: none; appearance: none; height: 22px; background: none; }
+#traffic::-webkit-slider-runnable-track, #cmpTraffic::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; background: var(--range, var(--track));
+}
+#traffic::-moz-range-track, #cmpTraffic::-moz-range-track {
+  height: 6px; border-radius: 3px; background: var(--range, var(--track));
+}
+#traffic::-webkit-slider-thumb, #cmpTraffic::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; margin-top: -6px;
+  border-radius: 50%; background: var(--ink); border: 2px solid var(--paper);
+}
+#traffic::-moz-range-thumb, #cmpTraffic::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper);
+}
+#traffic:focus-visible, #cmpTraffic:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
 
 .strategy-note {
   margin: 0;
@@ -562,7 +580,7 @@ body:not(.phone) .cmp-stats .sub { position: absolute; left: 0; top: 100%; margi
 .cmp-controls { display: contents; }
 body:not(.phone) .cmp-strip .control { flex-direction: column; align-items: flex-start; gap: 4px; }
 #cmpAmbulance { min-height: 40px; }
-#cmpTraffic { width: 150px; margin: 0; accent-color: var(--ink); cursor: pointer; }
+#cmpTraffic { width: 150px; margin: 0; cursor: pointer; }
 
 /* Phones: the map pickers at the top open the sheet; both maps turn with the phone. */
 .cmp-pick {

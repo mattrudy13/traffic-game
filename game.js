@@ -948,6 +948,35 @@
     return value < 25 ? 'light' : value < 60 ? 'normal' : value < 85 ? 'busy' : 'very busy';
   }
 
+  // Slider value where, on a normal day with arrows on, drivers start giving up at rush hour
+  // (the first value from which at least 2 of 3 seeded days had give-ups). Measured in steps
+  // of 5, so treat it as +-5. Smart overloads first: it holds a flowing green longer, so a
+  // busy side street can sit through more of the rush.
+  var CAPACITY = {
+    1: { smart: 55, timer: 65, wave: 65 },
+    2: { smart: 55, timer: 60, wave: 60 },
+    4: { smart: 55, timer: 60, wave: 60 },
+    6: { smart: 55, timer: 55, wave: 55 }
+  };
+
+  // Name the slider value and shade the track past capacity. Above it the filled part turns
+  // red too, so it reads as "too much" before the badges pile up.
+  function showTraffic(input, nameEl, cap) {
+    var v = prefs.traffic, over = v >= cap;
+    nameEl.textContent = over ? 'overloaded' : trafficName(v);
+    nameEl.classList.toggle('over', over);
+    var soft = 'color-mix(in srgb, var(--danger) 30%, var(--track))';
+    input.style.setProperty('--range', over
+      ? 'linear-gradient(to right, var(--ink) 0 ' + cap + '%, var(--danger) ' + cap + '% ' + v + '%, ' + soft + ' ' + v + '%)'
+      : 'linear-gradient(to right, var(--ink) 0 ' + v + '%, var(--track) ' + v + '% ' + cap + '%, ' + soft + ' ' + cap + '%)');
+  }
+  function chillCapacity() { return CAPACITY[prefs.lights][prefs.strategy]; }
+  // The first of the two maps to overload sets the mark.
+  function compareCapacity() {
+    var row = CAPACITY[prefs.lights];
+    return Math.min(row[prefs.compare.a.strategy], row[prefs.compare.b.strategy]);
+  }
+
   // `hour` (optional) starts the day at that time, so leaving compare mode carries on the same day.
   function newChillGame(hour) {
     var options = { strategy: prefs.strategy, arrows: prefs.arrows, kind: prefs.kind, weather: prefs.weather, buses: prefs.buses, ambulances: true };
@@ -993,7 +1022,7 @@
     markPressed(ui.cmpWeatherButtons, prefs.weather);
     markPressed(ui.cmpBusButtons, prefs.buses ? 'on' : 'off');
     ui.cmpTraffic.value = String(prefs.traffic);
-    ui.cmpTrafficName.textContent = trafficName(prefs.traffic);
+    showTraffic(ui.cmpTraffic, ui.cmpTrafficName, compareCapacity());
   }
 
   function markPressed(group, value) {
@@ -1004,7 +1033,7 @@
 
   function syncChillControls() {
     ui.traffic.value = String(prefs.traffic);
-    ui.trafficName.textContent = trafficName(prefs.traffic);
+    showTraffic(ui.traffic, ui.trafficName, chillCapacity());
     markPressed(ui.layoutButtons, prefs.lights);
     markPressed(ui.strategyButtons, prefs.strategy);
     markPressed(ui.speedButtons, prefs.speed);
@@ -1346,7 +1375,7 @@
 
   ui.traffic.addEventListener('input', function () {
     prefs.traffic = Number(ui.traffic.value);
-    ui.trafficName.textContent = trafficName(prefs.traffic);
+    showTraffic(ui.traffic, ui.trafficName, chillCapacity());
     Sim.setTraffic(game, trafficRate(prefs.traffic));
   });
   ui.traffic.addEventListener('change', savePrefs);
@@ -1450,7 +1479,7 @@
   // Traffic changes both cities at once, so they stay matched without a restart.
   ui.cmpTraffic.addEventListener('input', function () {
     prefs.traffic = Number(ui.cmpTraffic.value);
-    ui.cmpTrafficName.textContent = trafficName(prefs.traffic);
+    showTraffic(ui.cmpTraffic, ui.cmpTrafficName, compareCapacity());
     Sim.setTraffic(cmp.a, trafficRate(prefs.traffic));
     Sim.setTraffic(cmp.b, trafficRate(prefs.traffic));
   });

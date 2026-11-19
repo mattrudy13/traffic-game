@@ -179,6 +179,22 @@ counts as a trip in the wait numbers, and the strip shows how many gave up today
 traffic above what the city can carry (about slider 60 on 6 lights) would build a queue that grows
 every day forever, since the night is too short to clear it. "Today" resets at midnight.
 
+The traffic slider shades the part of its track past the city's capacity, and its label reads
+"overloaded" once you're in it. Capacity here means the slider value where drivers start giving
+up at rush hour: the first value from which at least 2 of 3 seeded normal days (arrows on) had
+give-ups, measured in steps of 5. It follows the number of lights and the strategy; in compare
+mode the first map to overload sets it. Other traffic kinds and weather aren't measured.
+
+| | Smart | Timer | Green wave |
+|---|---|---|---|
+| 1 light | 55 | 65 | 65 |
+| 2 lights | 55 | 60 | 60 |
+| 4 lights | 55 | 60 | 60 |
+| 6 lights | 55 | 55 | 55 |
+
+Smart overloads first even though its average wait is lowest below capacity. It holds a flowing
+green longer, so in a heavy rush a busy cross street can back up off the map.
+
 (Earlier versions dropped arrivals past 4 queued, without counting them. That was 7–9% of cars
 at slider 50 and over a third at 100, so average waits topped out near 20 s however busy it got,
 and the more jammed compare map looked better than it was.)
