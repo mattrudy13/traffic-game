@@ -1,6 +1,8 @@
 # Road network plan
 
-Status: Stage 0 done (2026-11-19); Stage 1 not started. Replaces "every road is a straight line from one edge of
+Status: Stage 0 done (2026-11-19). Stage 1a started on branch `stage-1-network` (2026-11-19):
+`maps.js` and `network.js` build the network for every place and `network-test.js` checks it against
+today's engine; sim.js doesn't use it yet. Next: switch sim.js onto the network. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -82,16 +84,28 @@ Challenge mode's road schedule becomes roads with an `opensAt` time.
 
 ### Gridlock rule, generalized
 
-Each link gets `d` = the shortest driving distance from its start to any exit (Dijkstra run
-backwards from the exits over the movement graph). A car may take a movement only if it leads to a
-link with a smaller `d` than the one it's on.
+A car may take a movement only if it leads to a link with a smaller `d` (distance to exit) than the
+one it's on.
 
 Why that can't jam: a jam is a loop of cars, each waiting for space the next one holds. Every move
 makes `d` smaller, so following "who waits on whom" around a loop, `d` would have to keep getting
-smaller and still come back to where it started, which is impossible. Today's rule ("only turn onto a
-lane that runs straight out") is a special case of this one, and the roundabout exception we added
-falls out of it automatically. The cost is that cars can't drive around a block or into a dead end.
-That suits "cars start at dead ends and drive out". Trips with destinations would need reservations
+smaller and still come back to where it started, which is impossible. That holds for any `d`, so the
+work is choosing `d` so the moves people expect are allowed.
+
+Changed while building (2026-11-19): the first plan was `d` = shortest driving distance to an exit.
+That forbade going straight on past an avenue's first light, since turning off there is a shorter
+way out. So the allowed moves are picked first and `d` is measured over them (`buildDistances` in
+network.js):
+1. going straight on;
+2. turns onto a road that runs straight out of the map, and every way off a roundabout (today's
+   rules, so Stage 1 matches today's traffic);
+3. only for a road side with no way out at all (a T-junction's stem, Stage 2), its other turns,
+   shortest way out first.
+
+Each is added only if it doesn't let a car come back to where it was. `d` is then the longest allowed
+drive to the edge, so every allowed move lowers it. `network-test.js` checks the allowed turns match
+today's exactly. The cost is still that cars can't drive around a block or into a dead end. That
+suits "cars start at dead ends and drive out". Trips with destinations would need reservations
 instead, so the rule lives in one function that can be swapped later.
 
 "Don't block the box" stays as it is: every link has a capacity (cars that fit), and nobody enters a

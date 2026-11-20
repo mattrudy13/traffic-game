@@ -1,7 +1,7 @@
 // Runs every test script at once and says which passed. Each script sets a failing exit code
 // when it finds a problem. Run with:  node test.js   (takes ~1 min: the scripts run side by side)
 var spawn = require('child_process').spawn;
-var TESTS = ['freeze-test.js', 'overlap-test.js', 'compare-test.js', 'extras-test.js', 'kinds-test.js', 'places-test.js'];
+var TESTS = ['network-test.js', 'freeze-test.js', 'overlap-test.js', 'compare-test.js', 'extras-test.js', 'kinds-test.js', 'places-test.js'];
 var start = Date.now(), done = 0, failed = [];
 TESTS.forEach(function (file) {
   var out = '';

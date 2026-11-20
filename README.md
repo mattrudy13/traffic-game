@@ -30,6 +30,9 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 ## Files
 
 - `sim.js`: the rules (roads, lights, car movement, spawning, losing). No drawing.
+- `maps.js` and `network.js` (Stage 1 of ROAD-NETWORK-PLAN.md, not used by the game yet): every place
+  as road-network data (`{nodes, roads}`), and the builder that turns it into lanes between junctions,
+  the ways through each junction, which of those conflict, light phases, and which turns are allowed.
 - `game.js`: draws the map on a canvas, handles clicks, the score strip and the start/pause/game-over card.
 - `style.css`: the "transit map" look (paper, ink, Archivo + IBM Plex Sans).
 - `tune.js`: a bot that plays many challenge games in Node so the difficulty can be checked: `node tune.js`.
@@ -39,6 +42,8 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
   give-ups) and the challenge bot's survival, in `baseline.json`. `node baseline.js --check` compares
   against it (within 10%). It's the yardstick for rewriting the engine (see ROAD-NETWORK-PLAN.md):
   `node baseline.js --save` only when a change is meant to move the numbers.
+- `network-test.js`: checks the new road network against today's engine for every place and challenge
+  stage (same stop lines, turn paths and allowed turns; conflicts and yields as today's rules say): `node network-test.js`.
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
 - `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes, stop signs, roundabouts, merges), on Downtown and every other place: `node overlap-test.js`.
 - `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
