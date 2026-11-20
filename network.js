@@ -286,6 +286,10 @@
             d: Infinity
           };
           link.len = link.path.len;
+          // Compass direction for roads along the map's axes (null otherwise).
+          var q = Math.round(heading / (Math.PI / 2));
+          link.dir = Math.abs(heading - q * Math.PI / 2) < 0.01 ? ['W', 'N', 'E', 'S', 'W'][q + 2] : null;
+          link.axis = link.dir === 'E' || link.dir === 'W' ? 'ew' : link.dir ? 'ns' : null;
           link.stopLine = end.type === 'edge' ? null : link.len - cfg.stopGap;
           siblings.push(link);
           startArm.outLinks.push(link);
@@ -302,6 +306,7 @@
       buildMovements(net, node);
       buildConflicts(net, node, cfg);
       buildYields(net, node);
+      buildGroups(net, node);
       if (node.control.type === 'light') { buildPhases(net, node); net.lights.push(node); }
     });
 
@@ -402,11 +407,12 @@
     });
   }
 
-  // A light's phases: each pair of opposite arms goes together, and an arm with no opposite goes
-  // alone. A phase on an avenue gets a left-turn arrow: its left turns, which go first while
-  // oncoming traffic is held. `tag` is 'ew' or 'ns' for a phase along the map's axes.
-  function buildPhases(net, node) {
+  // A junction's arm groups: each pair of opposite arms goes together, and an arm with no opposite
+  // goes alone. `tag` is 'ew' or 'ns' for a group along the map's axes. Lights turn groups into
+  // phases; all-way stops let one group go at a time.
+  function buildGroups(net, node) {
     var used = {};
+    node.groups = [];
     node.arms.forEach(function (arm, i) {
       if (used[i]) return;
       used[i] = 1;
@@ -414,13 +420,24 @@
       node.arms.forEach(function (other, j) {
         if (!used[j] && arms.length === 1 && Math.abs(wrap(other.angle - arm.angle)) > Math.PI - STRAIGHT) { used[j] = 1; arms.push(other); }
       });
-      var moves = node.movements.filter(function (m) { return arms.indexOf(m.from.toArm) >= 0; });
-      if (!moves.length) return;
       var a = mod2pi(arm.angle) % Math.PI;
+      node.groups.push({ arms: arms, tag: a < 0.1 || a > Math.PI - 0.1 ? 'ew' : Math.abs(a - Math.PI / 2) < 0.1 ? 'ns' : null });
+    });
+    // East-west first: timer and green-wave lights start their cycle with it.
+    var rank = { ew: 0, ns: 1 };
+    node.groups.sort(function (p, q) { return (p.tag in rank ? rank[p.tag] : 2) - (q.tag in rank ? rank[q.tag] : 2); });
+    node.groups.forEach(function (grp, i) { grp.arms.forEach(function (arm) { arm.group = i; }); });
+  }
+
+  // A light's phases, one per arm group with traffic coming in. A phase on an avenue gets a
+  // left-turn arrow: its left turns, which go first while oncoming traffic is held.
+  function buildPhases(net, node) {
+    node.groups.forEach(function (grp) {
+      var moves = node.movements.filter(function (m) { return grp.arms.indexOf(m.from.toArm) >= 0; });
+      if (!moves.length) return;
       var phase = {
-        id: node.phases.length, node: node, arms: arms, movements: moves,
-        arrow: arms.length === 2 ? moves.filter(function (m) { return m.turn === 'left' && m.from.kind === 'avenue'; }) : [],
-        tag: a < 0.1 || a > Math.PI - 0.1 ? 'ew' : Math.abs(a - Math.PI / 2) < 0.1 ? 'ns' : null
+        id: node.phases.length, node: node, arms: grp.arms, movements: moves, tag: grp.tag,
+        arrow: grp.arms.length === 2 ? moves.filter(function (m) { return m.turn === 'left' && m.from.kind === 'avenue'; }) : []
       };
       moves.forEach(function (m) { m.phase = phase; });
       node.phases.push(phase);

@@ -29,10 +29,13 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 
 ## Files
 
-- `sim.js`: the rules (roads, lights, car movement, spawning, losing). No drawing.
-- `maps.js` and `network.js` (Stage 1 of ROAD-NETWORK-PLAN.md, not used by the game yet): every place
-  as road-network data (`{nodes, roads}`), and the builder that turns it into lanes between junctions,
-  the ways through each junction, which of those conflict, light phases, and which turns are allowed.
+- `sim.js`: the rules (lights, car movement, spawning, losing). No drawing. Cars drive on the road
+  network from `network.js`.
+- `maps.js` and `network.js`: every place as road-network data (`{nodes, roads}`), and the builder
+  that turns it into lanes between junctions, the ways through each junction, which of those
+  conflict, light phases, and which turns are allowed.
+- `legacy-sim.js`: the engine before Stage 1 of ROAD-NETWORK-PLAN.md, kept only so
+  `network-test.js` can compare against it until Stage 1 merges.
 - `game.js`: draws the map on a canvas, handles clicks, the score strip and the start/pause/game-over card.
 - `style.css`: the "transit map" look (paper, ink, Archivo + IBM Plex Sans).
 - `tune.js`: a bot that plays many challenge games in Node so the difficulty can be checked: `node tune.js`.
@@ -42,8 +45,9 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
   give-ups) and the challenge bot's survival, in `baseline.json`. `node baseline.js --check` compares
   against it (within 10%). It's the yardstick for rewriting the engine (see ROAD-NETWORK-PLAN.md):
   `node baseline.js --save` only when a change is meant to move the numbers.
-- `network-test.js`: checks the new road network against today's engine for every place and challenge
-  stage (same stop lines, turn paths and allowed turns; conflicts and yields as today's rules say): `node network-test.js`.
+- `network-test.js`: checks the road network against the engine before Stage 1 (`legacy-sim.js`) for
+  every place and challenge stage (same stop lines, turn paths and allowed turns; conflicts and
+  yields as the old rules say): `node network-test.js`.
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
 - `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes, stop signs, roundabouts, merges), on Downtown and every other place: `node overlap-test.js`.
 - `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
@@ -106,6 +110,11 @@ cost everyone much more. The **Left arrows On/Off** switch in the controls flips
 you can watch the average-wait chart move.
 
 ## Light strategies
+
+> Branch `stage-1-network`: the numbers in the tables below were measured on the engine before
+> Stage 1. Junction rules now come from the cars' paths (see ROAD-NETWORK-PLAN.md), which lowered
+> waits by 5–50% depending on the setup; `baseline.json` holds the new numbers. The tables and the
+> slider's capacity marks get re-measured in Stage 1b, once game.js draws the new network.
 
 - **Smart:** a light switches once the cars stopped on the red side outnumber *every* car within
   160 px of the green side (moving or not) by more than 2 to 1 (green lasts 3–20 s). An earlier

@@ -1,5 +1,6 @@
-// Network test: builds the new road network (maps.js + network.js) for every place and challenge
-// stage, and checks it against what today's engine (sim.js) builds for the same map:
+// Network test: builds the road network (maps.js + network.js) for every place and challenge
+// stage, and checks it against what the engine before Stage 1 builds for the same map
+// (legacy-sim.js, kept until Stage 1 merges):
 //   - every stop line and box edge is in the same spot, and lanes that end or close match;
 //   - every turn today's engine offers exists as a movement, along the same path;
 //   - every turn today's gridlock rule allows is also allowed by distance-to-exit;
@@ -7,7 +8,7 @@
 //   - every movement's path joins its two links, and every allowed movement brings its car closer
 //     to an exit.
 // Run with:  node network-test.js   (takes ~1 s)
-var Sim = require('./sim.js'), Maps = require('./maps.js'), Net = require('./network.js');
+var Sim = require('./legacy-sim.js'), Maps = require('./maps.js'), Net = require('./network.js');
 var cfg = Sim.CONFIG, W = cfg.width, H = cfg.height;
 var failures = [], extraTurns = 0, checks = 0;
 

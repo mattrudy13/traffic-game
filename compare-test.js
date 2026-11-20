@@ -16,7 +16,7 @@ function check(lights, rate, a, b) {
       g.lanes.forEach(function (lane) {
         lane.cars.forEach(function (car) {
           var key = lane.id + ':' + car.arrival;
-          if (car.arrival && !(key in firstTurn[k]) && car.s < 40) firstTurn[k][key] = car.plan ? (car.plan.want || car.plan.turn) : 'none';
+          if (lane.isSource && car.arrival && !(key in firstTurn[k]) && car.s < 40) firstTurn[k][key] = car.plan ? (car.plan.want || car.plan.turn) : 'none';
         });
       });
     });

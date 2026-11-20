@@ -18,7 +18,7 @@ var total = 0;
       var pts = [];
       g.lanes.forEach(function (lane) {
         lane.cars.forEach(function (car) {
-          if (car.plan && car.plan.turn !== 'straight' && car.s > car.plan.stop.boxStart && !seen[car.id]) { seen[car.id] = 1; turns[car.plan.turn]++; }
+          if (car.plan && car.plan.move && car.plan.turn !== 'straight' && car.s > lane.len && !seen[car.id]) { seen[car.id] = 1; turns[car.plan.turn]++; }
           // sample 3 points along the body
           [3, car.len / 2, car.len - 3].forEach(function (b) { var p = Sim.carPoint(lane, car, b); pts.push({ id: car.id, x: p.x, y: p.y }); });
         });

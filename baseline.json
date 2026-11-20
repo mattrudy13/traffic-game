@@ -1,106 +1,106 @@
 {
   "downtown 1 smart": {
-    "trips": 1395,
-    "wait": 22.8,
-    "gaveUp": 19
+    "trips": 1392,
+    "wait": 14.4,
+    "gaveUp": 0
   },
   "downtown 1 timer": {
     "trips": 1392,
-    "wait": 17.7,
+    "wait": 9.5,
     "gaveUp": 0
   },
   "downtown 1 wave": {
-    "trips": 1398,
-    "wait": 19.2,
+    "trips": 1399,
+    "wait": 11.5,
     "gaveUp": 0
   },
   "downtown 2 smart": {
     "trips": 1869,
-    "wait": 16,
+    "wait": 8.1,
     "gaveUp": 0
   },
   "downtown 2 timer": {
     "trips": 1865,
-    "wait": 17.9,
+    "wait": 9,
     "gaveUp": 0
   },
   "downtown 2 wave": {
-    "trips": 1867,
-    "wait": 17,
+    "trips": 1866,
+    "wait": 8.5,
     "gaveUp": 0
   },
   "downtown 4 smart": {
-    "trips": 2657,
-    "wait": 16.3,
+    "trips": 2658,
+    "wait": 9.2,
     "gaveUp": 0
   },
   "downtown 4 timer": {
-    "trips": 2648,
-    "wait": 19.5,
+    "trips": 2647,
+    "wait": 16.3,
     "gaveUp": 0
   },
   "downtown 4 wave": {
     "trips": 2652,
-    "wait": 17.4,
+    "wait": 12.3,
     "gaveUp": 0
   },
   "downtown 6 smart": {
-    "trips": 3255,
-    "wait": 11.2,
+    "trips": 3254,
+    "wait": 6.4,
     "gaveUp": 0
   },
   "downtown 6 timer": {
-    "trips": 3242,
-    "wait": 20.3,
+    "trips": 3245,
+    "wait": 16,
     "gaveUp": 0
   },
   "downtown 6 wave": {
-    "trips": 3241,
-    "wait": 19,
+    "trips": 3245,
+    "wait": 14.4,
     "gaveUp": 0
   },
   "main smart": {
-    "trips": 2091,
-    "wait": 12.3,
-    "gaveUp": 9
+    "trips": 2092,
+    "wait": 8.1,
+    "gaveUp": 0
   },
   "main timer": {
     "trips": 2092,
-    "wait": 11.5,
+    "wait": 7.6,
     "gaveUp": 0
   },
   "main wave": {
     "trips": 2092,
-    "wait": 11,
+    "wait": 6.8,
     "gaveUp": 0
   },
   "suburb smart": {
-    "trips": 1208,
-    "wait": 7,
+    "trips": 1209,
+    "wait": 6.7,
     "gaveUp": 0
   },
   "crosstown smart": {
-    "trips": 2540,
-    "wait": 25.1,
-    "gaveUp": 4
-  },
-  "crosstown timer": {
-    "trips": 2536,
-    "wait": 22.4,
-    "gaveUp": 1
-  },
-  "crosstown wave": {
-    "trips": 2524,
-    "wait": 24.4,
+    "trips": 2546,
+    "wait": 17.6,
     "gaveUp": 0
   },
+  "crosstown timer": {
+    "trips": 2534,
+    "wait": 18.9,
+    "gaveUp": 0
+  },
+  "crosstown wave": {
+    "trips": 2522,
+    "wait": 20.9,
+    "gaveUp": 1
+  },
   "challenge bot 0.5s": {
-    "survival": 336
+    "survival": 339
   },
   "challenge bot 1s": {
-    "survival": 308
+    "survival": 338
   },
   "challenge bot 2s": {
-    "survival": 214
+    "survival": 217
   }
 }

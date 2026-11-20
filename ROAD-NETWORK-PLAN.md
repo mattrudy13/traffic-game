@@ -1,8 +1,9 @@
 # Road network plan
 
-Status: Stage 0 done (2026-11-19). Stage 1a started on branch `stage-1-network` (2026-11-19):
-`maps.js` and `network.js` build the network for every place and `network-test.js` checks it against
-today's engine; sim.js doesn't use it yet. Next: switch sim.js onto the network. Replaces "every road is a straight line from one edge of
+Status: Stage 0 done (2026-11-19). Stage 1a done on branch `stage-1-network` (2026-11-19):
+sim.js drives on the network from `maps.js` and `network.js`; all tests pass and `baseline.json`
+is re-saved (see "Stage 1a result" below). game.js can't draw the new network yet, so the game
+doesn't run on the branch until Stage 1b. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -144,6 +145,19 @@ baseline (see README, Places).
 - Done when: all tests pass; nothing freezes; compare still matches cars exactly; each place's
   baseline numbers land within about 10%; the challenge bot (`tune.js`) survives about as long as
   before; capacity marks re-measured.
+
+**Stage 1a result (2026-11-19).** Trips and the challenge bot's survival match the old engine
+(survival 339 / 338 / 217 s, was 336 / 308 / 214). Waits came out 5–50% lower (Downtown 4 Smart
+16.3 s to 9.2 s; Crosstown Smart 25.1 s to 17.6 s), so the baseline was re-saved on purpose. Why:
+the old box rules were by axis. A car that had just turned counted as cross traffic until its rear
+left the box, which held the next car following it round the same corner. The opposite left turns
+off an avenue also couldn't go together outside an arrow. The new rules only hold a car for
+movements whose paths actually meet. With the old rules copied back in, Downtown came back to
+within ~10% of the old baseline, which is how the cause was confirmed. The overlap test finds no
+collisions. One strategy ranking changed: on Crosstown, Smart went from worst to best. Other
+changes: any avenue light can show left arrows (adds one at Crosstown), and the extras test's
+"bus or ambulance stuck" limit went from 200 s to 300 s (the old engine reached 254 s on other
+seeds at that traffic).
 
 **Stage 2: T-junctions, dead ends, one-way streets (medium).**
 - Still straight roads.

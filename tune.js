@@ -20,13 +20,10 @@ function seeded(seed) {
 
 function waitingAt(g, light, axis) {
   var n = 0;
-  g.lanes.forEach(function (lane) {
-    if (lane.axis !== axis) return;
-    lane.stops.forEach(function (stop) {
-      if (stop.light !== light) return;
-      lane.cars.forEach(function (car) {
-        if (car.v < 20 && car.s <= stop.line + 0.5 && car.s > stop.line - 160) n++;
-      });
+  g.lanes.forEach(function (link) {
+    if (link.to.id !== light.key || link.axis !== axis) return;
+    link.cars.forEach(function (car) {
+      if (car.v < 20 && car.s <= link.stopLine + 0.5 && car.s > link.stopLine - 160) n++;
     });
   });
   return n;

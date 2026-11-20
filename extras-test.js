@@ -8,7 +8,10 @@
 // Run with:  node extras-test.js   (takes ~30 s)
 var Sim = require('./sim.js');
 var problems = 0;
-var STUCK = 200;   // seconds; the longest seen at this traffic is about 145
+// Seconds. This traffic is heavy on purpose (Smart waits average 80-110 s), so a bus or ambulance
+// caught in a jam takes a while: over seeds 11-14 the longest was 254 s on the engine before
+// Stage 1 and 208 s after. A freeze would leave one there for the rest of the day.
+var STUCK = 300;
 function run(n, st, weather, kind) {
   var g = Sim.createChill(n, 0.35, { seed: 11, strategy: st, weather: weather, buses: true, ambulances: true, kind: kind });
   var last = 0, worst = 1e9, busesSeen = {}, busesDone = 0, ambSeen = {}, ambDone = 0, dwelled = 0, snow = 0, rain = 0;
