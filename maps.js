@@ -7,14 +7,24 @@
  *              cars start here and drive out, nobody drives in)
  *     control  { type: light | stop2 | stop4 | round, major: [ids of the neighbour nodes on the
  *              main road] (stop2 only) }
- *   roads: [ { from, to, kind, lanes: [forward, back], weight } ]
+ *   roads: [ { from, to, kind, lanes: [forward, back], weight, oneway, via, before, after } ]
  *     kind     street | avenue
  *     lanes    lanes going from -> to, and to -> from (0 for none)
  *     weight   scales the traffic that enters on this road (default 1)
+ *     oneway   a one-way street: lanes [n, 0], only as wide as its lanes (a cul-de-sac's road
+ *              has lanes [1, 0] too, but is drawn as a full street)
+ *     via      bend points [x, y]: the road curves smoothly through them
+ *     before, after   the points the road comes from and goes on to past its ends, so it carries
+ *              on through a junction at the same angle (`chain` below fills these in)
+ *   turns      'through' lets cars turn onto any road that runs straight on to the edge, not just
+ *              one whose next junction is the edge (see network.js, buildDistances)
+ *   scenery    things drawn under the roads: { type: 'river', pts, width }, { type: 'bridge',
+ *              from, to, half } (railings either side of a road over water), { type: 'square',
+ *              x, y, rx, ry } (a paved square)
  *
  * Downtown, Main Street and Crosstown are grids of straight roads running edge to edge, written as
- * grid specs that `gridMap` turns into nodes and roads. Suburb is hand-written (T-junctions and
- * cul-de-sacs); later maps will be too.
+ * grid specs that `gridMap` turns into nodes and roads. Suburb, Riverside and Old town are
+ * hand-written.
  */
 (function (root) {
   'use strict';
@@ -39,6 +49,8 @@
       }
     },
     suburb: { map: suburbMap },
+    riverside: { map: riversideMap },
+    oldtown: { map: oldtownMap },
     crosstown: {
       roads: [['v', 0.17], ['v', 0.5, true, 0.6], ['v', 0.83], ['h', 0.24], ['h', 0.64, true, 0.6]],
       control: function (vi, hi) {
@@ -97,6 +109,95 @@
       courtRoad('C5', 'S2'), courtRoad('C6', 'S4'), courtRoad('C7', 'S4')
     ];
     return { nodes: nodes, roads: roads };
+  }
+
+  // One road drawn as a single line through several junctions: `pts` are node ids and [x, y] bend
+  // points. Returns a road for each stretch between two nodes, each carrying on smoothly into the
+  // next. A chain of nodes in a straight line gives plain straight roads.
+  function chain(nodes, pts, props) {
+    function xy(p) { return typeof p === 'string' ? [nodes[p].x, nodes[p].y] : p; }
+    var P = pts.map(xy), straight = pts.every(function (p) { return typeof p === 'string'; }) && P.every(function (p, i) {
+      if (i < 2) return true;
+      var a = P[0], b = P[1];
+      return Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) < 1e-6;
+    });
+    var roads = [], start = 0;
+    for (var i = 1; i < pts.length; i++) {
+      if (typeof pts[i] !== 'string') continue;
+      var road = Object.assign({ from: pts[start], to: pts[i], kind: 'street', lanes: [1, 1] }, props);
+      if (!straight) {
+        road.via = P.slice(start + 1, i);
+        if (start > 0) road.before = P[start - 1];
+        if (i < pts.length - 1) road.after = P[i + 1];
+      }
+      roads.push(road);
+      start = i;
+    }
+    return roads;
+  }
+  function edge(x, y) { return { x: x, y: y, type: 'edge' }; }
+  function light(x, y) { return { x: x, y: y, control: { type: 'light' } }; }
+  function stop2(x, y, a, b) { return { x: x, y: y, control: { type: 'stop2', major: [a, b] } }; }
+
+  // Riverside ("meander", chosen from the Stage 3 mockups). The river winds west to east across
+  // the middle; a bank road follows it on each side, and diagonal streets come in from the map
+  // edges to meet them. One avenue bridge links the banks, with a light at each end: every trip
+  // across the river uses it. Lights also where the busier diagonals meet the bank roads.
+  function riversideMap() {
+    var nodes = {
+      wN: edge(0, 210), eN: edge(1280, 190), wS: edge(0, 430), eS: edge(1280, 410),
+      n640: edge(640, 0), s640: edge(640, 680), n180: edge(180, 0), n1010: edge(1010, 0), s230: edge(230, 680), s1090: edge(1090, 680),
+      // The bridge ends, on the north and south bank roads.
+      NB: light(640, 245), SB: light(640, 475),
+      // Where the diagonals meet the bank roads.
+      // T2 sits well east of the bridge: westbound cars queue for the bridge light between them,
+      // and with room for only 5 the queue reached the map edge on busy evenings.
+      T1: light(400, 215), T2: stop2(1000, 165, 'NB', 'eN'), T3: stop2(400, 435, 'wS', 'SB'), T4: light(880, 415)
+    };
+    var roads = [].concat(
+      chain(nodes, ['wN', [200, 180], 'T1', 'NB', [820, 205], 'T2', [1140, 160], 'eN']),
+      chain(nodes, ['wS', [200, 400], 'T3', 'SB', 'T4', [1080, 370], 'eS']),
+      chain(nodes, ['n640', 'NB', 'SB', 's640'], { kind: 'avenue', lanes: [2, 2] }),
+      // The diagonals bend to meet the bank roads closer to square: met at a shallow angle, a
+      // junction's box has to reach far along each road to clear the other one.
+      chain(nodes, ['n180', [350, 100], 'T1'], { weight: 0.7 }), chain(nodes, ['s1090', [920, 540], 'T4'], { weight: 0.7 }),
+      chain(nodes, ['n1010', 'T2'], { weight: 0.4 }), chain(nodes, ['s230', [360, 560], 'T3'], { weight: 0.4 })
+    );
+    return {
+      nodes: nodes, roads: roads, turns: 'through',
+      scenery: [
+        { type: 'river', width: 112, pts: [[-80, 325], [0, 320], [200, 290], [400, 325], [640, 360], [880, 305], [1080, 260], [1280, 300], [1360, 305]] },
+        { type: 'bridge', from: [640, 292], to: [640, 428], half: 59 }
+      ]
+    };
+  }
+
+  // Old town ("split round the square", chosen from the Stage 3 mockups). The west-east road splits
+  // at a small roundabout into a one-way pair that curves round the market square and joins again
+  // at a second roundabout, so the pair carries all west-east through traffic. A short main street
+  // crosses the square north-south, with the town's only lights where it meets the pair. Old
+  // lanes run out to the edges at odd angles.
+  function oldtownMap() {
+    var nodes = {
+      wW: edge(0, 340), eE: edge(1280, 340), mN: edge(640, 0), mS: edge(640, 680),
+      n300: edge(300, 0), s980: edge(980, 680), sW: edge(120, 680), nE: edge(1160, 0),
+      RW: { x: 230, y: 340, control: { type: 'round' } }, RE: { x: 1050, y: 340, control: { type: 'round' } },
+      L1: light(640, 212), L2: light(640, 468),
+      N1: stop2(430, 232, 'RW', 'L1'), S2: stop2(850, 448, 'RE', 'L2')
+    };
+    var one = { oneway: true, lanes: [1, 0] };
+    var roads = [].concat(
+      chain(nodes, ['RW', [300, 262], 'N1', 'L1', [850, 232], [980, 262], 'RE'], one),   // eastbound, north of the square
+      chain(nodes, ['RE', [980, 418], 'S2', 'L2', [430, 448], [300, 418], 'RW'], one),   // westbound, south of it
+      chain(nodes, ['mN', 'L1', 'L2', 'mS']),
+      chain(nodes, ['wW', 'RW']), chain(nodes, ['RE', 'eE']),
+      chain(nodes, ['n300', 'N1'], { weight: 0.5 }), chain(nodes, ['S2', 's980'], { weight: 0.5 }),
+      chain(nodes, ['RW', [170, 500], 'sW'], { weight: 0.5 }), chain(nodes, ['RE', [1110, 180], 'nE'], { weight: 0.5 })
+    );
+    return {
+      nodes: nodes, roads: roads, turns: 'through',
+      scenery: [{ type: 'square', x: 640, y: 340, rx: 300, ry: 92 }]
+    };
   }
 
   // A grid spec -> {nodes, roads}. Roads run edge to edge and every crossing is a junction.

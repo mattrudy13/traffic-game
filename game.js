@@ -17,7 +17,8 @@
     spark: '#c47a12', danger: '#b3262b', median: '#d9d1c0',
     sideA: '#24539a', sideAInk: '#f5f1e8', sideB: '#c47a12', sideBInk: '#22252b',
     stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00',
-    rainInk: '#3460a0', snowEdge: '#ffffff', paint: '#f5f1e8', sign: '#c8323a', island: '#a9c48f'
+    rainInk: '#3460a0', snowEdge: '#ffffff', paint: '#f5f1e8', sign: '#c8323a', island: '#a9c48f',
+    water: '#a9cfe0', bank: '#8db6c9', railing: '#f5f1e8', square: '#e9e1cf', squareEdge: '#c9bea8'
   };
   var NIGHT = {
     map: '#3b362e', grid: '#453f36', road: '#1c1b19', dash: '#5a554c', car: '#f4ead6',
@@ -26,7 +27,8 @@
     spark: '#ffd166', danger: '#ff8a80', median: '#4d473c',
     sideA: '#8fb3ea', sideAInk: '#2b2722', sideB: '#ffb547', sideBInk: '#2b2722',
     stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d',
-    rainInk: '#aac8f0', snowEdge: '#e8e4dc', paint: '#d8d0c0', sign: '#e5484d', island: '#4f6143'
+    rainInk: '#aac8f0', snowEdge: '#e8e4dc', paint: '#d8d0c0', sign: '#e5484d', island: '#4f6143',
+    water: '#2f4c5a', bank: '#3b5d6c', railing: '#d8d0c0', square: '#4a443a', squareEdge: '#5d564a'
   };
   // Everything outside the map, plus the bits drawn on it that use the strip's ink and paper.
   var FLIP = { paper: 1, ink: 1, muted: 1, track: 1, rush: 1, spark: 1, danger: 1, sideA: 1, sideAInk: 1,
@@ -65,12 +67,14 @@
     for (var i = 0; i < 220; i++) out.push({ x: r(), y: r(), k: 0.7 + r() * 0.6, size: r() });
     return out;
   })();
-  var PLACE_NAMES = { downtown: 'Downtown', main: 'Main Street', suburb: 'Suburb', crosstown: 'Crosstown' };
+  var PLACE_NAMES = { downtown: 'Downtown', main: 'Main Street', suburb: 'Suburb', crosstown: 'Crosstown', riverside: 'Riverside', oldtown: 'Old town' };
   var PLACE_NOTES = {
     downtown: '',
     main: 'Main Street: side streets stop and wait for a gap in the avenue; one light at the busiest crossing. The back street has all-way stops.',
-    suburb: 'Suburb: no lights. All-way stops, a roundabout where the two through streets meet, and a school run.',
-    crosstown: 'Crosstown: two avenues meet at a roundabout, each narrowing to one lane on the way in. Lights on the side streets.'
+    suburb: 'Suburb: no lights. Side streets and cul-de-sacs stop for the through roads, which meet at a roundabout. Mornings bring a school run.',
+    crosstown: 'Crosstown: two avenues meet at a roundabout, each narrowing to one lane on the way in. Lights on the side streets.',
+    riverside: 'Riverside: one bridge carries every trip across the river. Lights at both ends and on the bank roads.',
+    oldtown: 'Old town: one-way streets round the square, small roundabouts, and lights only on the main street. Busy all day.'
   };
   // Stadium and Construction are built around Downtown's grid.
   var DOWNTOWN_KINDS = ['stadium', 'construction'];
@@ -281,18 +285,24 @@
     ctx.restore();
   }
 
-  // Straight lines along every road, `offsets(road)` px to the right of its from -> to direction.
-  // The dash pattern is anchored to the map, so a road split into pieces at its junctions still
-  // dashes as one line.
+  // A road's centre line, `o` px to the right of its from -> to direction, added to the current path.
+  // Curved roads follow their sampled line; straight ones are a single segment.
+  function traceRoad(r, o) {
+    r.line.pts.forEach(function (p, k) {
+      var n = rightOf(p.angle), x = p.x + n.x * o, y = p.y + n.y * o;
+      if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    });
+  }
+
+  // Lines along every road, `offsets(road)` px to the right of its from -> to direction.
+  // On straight roads the dash pattern is anchored to the map, so a road split into pieces at its
+  // junctions still dashes as one line.
   function strokeAlongRoads(offsets, dashed) {
     drawn.net.roads.forEach(function (r) {
-      var a = r.from, b = r.to, u = { x: Math.cos(r.angle), y: Math.sin(r.angle) }, n = rightOf(r.angle);
-      if (dashed) ctx.lineDashOffset = a.x * u.x + a.y * u.y;
+      var a = r.from, u = { x: Math.cos(r.angle), y: Math.sin(r.angle) };
+      if (dashed) ctx.lineDashOffset = r.curved ? 0 : a.x * u.x + a.y * u.y;
       ctx.beginPath();
-      offsets(r).forEach(function (o) {
-        ctx.moveTo(a.x + n.x * o, a.y + n.y * o);
-        ctx.lineTo(b.x + n.x * o, b.y + n.y * o);
-      });
+      offsets(r).forEach(function (o) { traceRoad(r, o); });
       ctx.stroke();
     });
     ctx.lineDashOffset = 0;
@@ -328,6 +338,7 @@
     ctx.fillStyle = palette.map;
     ctx.fillRect(0, 0, W, H);
     drawGrid();
+    drawScenery();
     var wx = weatherMix(nowMs);
     if (wx.rain + wx.snow > 0) drawWeatherTint(wx, darkness);
     if (drawn.stadium) drawStadium();
@@ -468,17 +479,19 @@
   function drawRoads() {
     ctx.strokeStyle = palette.road;
     ctx.lineCap = 'butt';
+    ctx.lineJoin = 'round';
     drawn.net.roads.forEach(function (r) {
       ctx.lineWidth = r.half * 2;
       ctx.beginPath();
-      ctx.moveTo(r.from.x, r.from.y);
-      ctx.lineTo(r.to.x, r.to.y);
+      traceRoad(r, 0);
       ctx.stroke();
     });
+    drawBridges();
     ctx.strokeStyle = palette.dash;
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 10]);
     strokeAlongRoads(function (r) {
+      if (r.oneway) return [];
       if (r.kind !== 'avenue') return [0];
       var o = r.spec.median / 2 + r.spec.laneWidth;
       return [-o, o];
@@ -489,10 +502,10 @@
       if (!r.spec.median) return;
       ctx.lineWidth = r.spec.median;
       ctx.beginPath();
-      ctx.moveTo(r.from.x, r.from.y);
-      ctx.lineTo(r.to.x, r.to.y);
+      traceRoad(r, 0);
       ctx.stroke();
     });
+    drawOneWayArrows();
     // Plain boxes over the junctions so lines and medians don't run through them, and a round
     // end on each cul-de-sac.
     ctx.fillStyle = palette.road;
@@ -508,6 +521,86 @@
       ctx.fill();
     });
     drawn.lights.forEach(function (l) { if (l.control === 'round') drawRoundabout(l); });
+  }
+
+  // What lies under the roads on a hand-written map (maps.js, `scenery`): a river, drawn as a band
+  // of water along a smooth line through its points, and paved squares.
+  function drawScenery() {
+    drawn.net.scenery.forEach(function (s) {
+      if (s.type === 'river') {
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        smoothLine(s.pts);
+        ctx.strokeStyle = palette.bank;
+        ctx.lineWidth = s.width + 12;
+        ctx.stroke();
+        ctx.strokeStyle = palette.water;
+        ctx.lineWidth = s.width;
+        ctx.stroke();
+      } else if (s.type === 'square') {
+        ctx.beginPath();
+        ctx.ellipse(s.x, s.y, s.rx, s.ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = palette.square;
+        ctx.fill();
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = palette.squareEdge;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+  }
+
+  // A smooth line through points (Catmull-Rom, as roads use), added to the current path.
+  function smoothLine(pts) {
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 0; i + 1 < pts.length; i++) {
+      var p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      ctx.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6,
+        p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]);
+    }
+  }
+
+  // Railings along both sides of a road where it crosses water.
+  function drawBridges() {
+    drawn.net.scenery.forEach(function (s) {
+      if (s.type !== 'bridge') return;
+      var a = Math.atan2(s.to[1] - s.from[1], s.to[0] - s.from[0]), n = rightOf(a);
+      ctx.strokeStyle = palette.railing;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      [-1, 1].forEach(function (side) {
+        ctx.moveTo(s.from[0] + n.x * s.half * side, s.from[1] + n.y * s.half * side);
+        ctx.lineTo(s.to[0] + n.x * s.half * side, s.to[1] + n.y * s.half * side);
+      });
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+    });
+  }
+
+  // Arrows painted down the middle of one-way streets, pointing the way traffic goes.
+  function drawOneWayArrows() {
+    ctx.fillStyle = palette.paint;
+    ctx.globalAlpha = 0.75;
+    drawn.lanes.forEach(function (lane) {
+      if (!lane.road.oneway || lane.index !== 0) return;
+      var room = lane.stopLine === null ? lane.len : lane.stopLine;
+      for (var s = 60; s < room - 30; s += 140) {
+        var p = at(lane, s);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+        ctx.beginPath();
+        ctx.moveTo(-12, -3); ctx.lineTo(3, -3); ctx.lineTo(3, -8); ctx.lineTo(12, 0);
+        ctx.lineTo(3, 8); ctx.lineTo(3, 3); ctx.lineTo(-12, 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    });
+    ctx.globalAlpha = 1;
   }
 
   // A cul-de-sac's turning circle: a bit wider than its road.
@@ -803,7 +896,7 @@
       ctx.stroke();
       ctx.shadowBlur = 0;
       if (l.phase === 'arrow') drawTurnArrows(l.x, l.y);
-      else drawArrow(l.x, l.y, l.axis === 'ns');
+      else drawArrow(l.x, l.y, l.phases[l.cur] ? l.phases[l.cur].arms[0].angle : 0);
     });
   }
 
@@ -820,12 +913,13 @@
     ctx.restore();
   }
 
-  // Double-headed arrow showing which way traffic is (or was just) allowed to go.
-  function drawArrow(x, y, vertical) {
+  // Double-headed arrow showing which way traffic is (or was just) allowed to go: along the road
+  // whose phase it is, at whatever angle that road meets the junction.
+  function drawArrow(x, y, angle) {
     var len = 7, head = 4;
     ctx.save();
     ctx.translate(x, y);
-    if (!vertical) ctx.rotate(Math.PI / 2);
+    ctx.rotate(angle + Math.PI / 2);
     ctx.strokeStyle = palette.arrow;
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -849,14 +943,19 @@
       // The badge is drawn upright on screen, so on a turned map it takes up bh x bw of the world.
       var ew = drawRotated ? bh : bw, eh = drawRotated ? bw : bh;
       if (q.lane.home) { drawHomeBadge(q.lane.from, text, bw, bh, ew, eh, pad); return; }
-      // Beside the road where it enters: its centre line at the edge, and half its width.
-      var lane = q.lane, road = lane.dir === 'S' || lane.dir === 'N' ? lane.from.x : lane.from.y, half = lane.road.half, x, y;
-      if (!lane.dir) return;
-      switch (lane.dir) {
-        case 'S': x = road - half - pad - ew; y = pad; break;
-        case 'N': x = road + half + pad; y = H - pad - eh; break;
-        case 'E': x = pad; y = road + half + pad; break;
-        default: x = W - pad - ew; y = road - half - pad - eh;
+      // Beside the road where it enters: its centre line at the edge, and half its width. A road
+      // that meets the edge at an angle is wider along the edge, and the badge goes on the side
+      // it leans away from.
+      var lane = q.lane, edge = lane.from.edge, h = lane.startHeading, x, y;
+      var down = edge === 'north' || edge === 'south', road = down ? lane.from.x : lane.from.y;
+      var across = down ? Math.abs(Math.sin(h)) : Math.abs(Math.cos(h));
+      var half = lane.road.half / Math.max(0.4, across), lean = down ? Math.cos(h) : Math.sin(h);
+      switch (edge) {
+        case 'north': x = lean < -0.05 ? road + half + pad : road - half - pad - ew; y = pad; break;
+        case 'south': x = lean > 0.05 ? road - half - pad - ew : road + half + pad; y = H - pad - eh; break;
+        case 'west': x = pad; y = lean > 0.05 ? road - half - pad - eh : road + half + pad; break;
+        case 'east': x = W - pad - ew; y = lean < -0.05 ? road + half + pad : road - half - pad - eh; break;
+        default: return;
       }
       ctx.save();
       ctx.translate(x + ew / 2, y + eh / 2);
@@ -1120,6 +1219,8 @@
   var PLACE_CAPACITY = {
     main: { smart: 75, timer: 75, wave: 80 },
     suburb: { smart: 80, timer: 80, wave: 80 },
+    riverside: { smart: 65, timer: 55, wave: 55 },
+    oldtown: { smart: 60, timer: 60, wave: 60 },
     crosstown: { smart: 50, timer: 50, wave: 50 }
   };
 

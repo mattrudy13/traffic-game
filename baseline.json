@@ -94,6 +94,36 @@
     "wait": 20.9,
     "gaveUp": 1
   },
+  "riverside smart": {
+    "trips": 2289,
+    "wait": 9.9,
+    "gaveUp": 0
+  },
+  "riverside timer": {
+    "trips": 2278,
+    "wait": 16.9,
+    "gaveUp": 0
+  },
+  "riverside wave": {
+    "trips": 2280,
+    "wait": 15.7,
+    "gaveUp": 0
+  },
+  "oldtown smart": {
+    "trips": 1258,
+    "wait": 11.6,
+    "gaveUp": 0
+  },
+  "oldtown timer": {
+    "trips": 1255,
+    "wait": 14.2,
+    "gaveUp": 0
+  },
+  "oldtown wave": {
+    "trips": 1258,
+    "wait": 15.6,
+    "gaveUp": 0
+  },
   "challenge bot 0.5s": {
     "survival": 339
   },

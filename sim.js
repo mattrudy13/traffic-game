@@ -161,10 +161,17 @@
     [17.5, 0.45], [19, 0.5], [21, 0.2], [23, 0.08], [24, 0.05]
   ];
 
+  // Old town's day: shoppers and deliveries keep it busy from mid-morning to evening, with only
+  // small rush hours on top.
+  var OLDTOWN_TRAFFIC = [
+    [0, 0.2], [5, 0.2], [6.5, 0.5], [8, 0.95], [9.5, 0.85], [11, 1.1], [13, 1.2], [16, 1.15],
+    [17.5, 1.3], [19, 1.05], [21, 0.6], [23, 0.3], [24, 0.2]
+  ];
+
   // Places whose day has its own shape (the rest follow DAY_TRAFFIC). Their roads and junctions
   // are in maps.js.
-  var PLACE_DAY = { suburb: SCHOOL_TRAFFIC };
-  var PLACE_NAMES = ['downtown', 'main', 'suburb', 'crosstown'];
+  var PLACE_DAY = { suburb: SCHOOL_TRAFFIC, oldtown: OLDTOWN_TRAFFIC };
+  var PLACE_NAMES = ['downtown', 'main', 'suburb', 'crosstown', 'riverside', 'oldtown'];
 
   // Seeded random numbers (mulberry32), so a city can be replayed exactly.
   function seeded(seed) {
@@ -791,16 +798,22 @@
 
   // At a roundabout every car drives the circle (turn 'round'); `exit` says where it leaves.
   function roundPlan(g, link, forced, rng) {
+    rng = rng || g.rng;
+    // The allowed exits by direction. A roundabout off the grid can have two exits the same way
+    // (Old town's east one: both ways off the one-way street are lefts) and none straight on.
     var exits = {};
-    link.out.forEach(function (m) { if (m.allowed && !m.to.closed) exits[m.exit] = m; });
+    link.out.forEach(function (m) { if (m.allowed && !m.to.closed) (exits[m.exit] = exits[m.exit] || []).push(m); });
     var exit = forced && forced !== 'straight' ? forced : 'straight';
     if (!forced && g.chill) {
-      var cfg = g.cfg, r = (rng || g.rng)();
+      var cfg = g.cfg, r = rng();
       if (r < cfg.turnLeft && exits.left) exit = 'left';
       else if (r < cfg.turnLeft + cfg.turnRight && exits.right) exit = 'right';
     }
-    var m = exits[exit] || exits.straight;
-    if (!m) return { move: null, turn: 'straight' };
+    // With no exit that way, any allowed exit will do (a car with no move would wait for ever).
+    var list = exits[exit] || exits.straight || [].concat(exits.left || [], exits.right || []);
+    if (!list.length) return { move: null, turn: 'straight' };
+    // Only draw from the stream when there's a choice, so the grid places' cars choose as before.
+    var m = list.length === 1 ? list[0] : list[Math.floor(rng() * list.length)];
     return { move: m, turn: 'round', exit: m.exit };
   }
 
@@ -1216,7 +1229,7 @@
     joins.forEach(function (j) {
       var car = j.car, m = car.plan.move, to = m.to;
       // The curve may end a little off the new lane's heading; ease that out instead of snapping.
-      car.settle = wrap(m.path.pts[m.path.pts.length - 1].angle - to.heading);
+      car.settle = wrap(m.path.pts[m.path.pts.length - 1].angle - to.startHeading);
       j.from.cars.splice(j.from.cars.indexOf(car), 1);
       car.s = Math.max(0, car.s - j.from.len - m.len);
       car.prevMove = m;
@@ -1316,10 +1329,13 @@
       var car = mv.car, from = mv.from, to = from.other;
       if (from.cars.indexOf(car) < 0 || !canMoveInto(g, to, car, from)) return;
       from.cars.splice(from.cars.indexOf(car), 1);
+      // On a bend the two lanes differ in length; the car keeps its place in proportion.
+      var a = linkPoint(from, car.s);
+      if (to.len !== from.len) car.s *= to.len / from.len;
       var at = 0;
       while (at < to.cars.length && to.cars[at].s > car.s) at++;
       to.cars.splice(at, 0, car);
-      var a = linkPoint(from, car.s), b = linkPoint(to, car.s);
+      var b = linkPoint(to, car.s);
       car.shift = 1;
       car.oldLane = from;
       car.shiftVec = { x: a.x - b.x, y: a.y - b.y };   // from the new lane back to the old one
@@ -1351,9 +1367,11 @@
       return g.traffic * curveAt(g.kind === 'sunday' ? SUNDAY_TRAFFIC : HOME_TRAFFIC, hour) * link.share;
     }
     var r = rate * link.share;
-    if (g.kind === 'commute' && link.axis === 'ew') {
+    // East or west: the lane's compass direction, or for a curved or angled road, its map edge.
+    var ew = link.axis === 'ew' ? link.dir : link.dir ? null : link.edge === 'west' ? 'E' : link.edge === 'east' ? 'W' : null;
+    if (g.kind === 'commute' && ew) {
       var bias = curveAt(COMMUTE_BIAS, hourOfDay(g)) * COMMUTE_STRENGTH;
-      r *= Math.exp(link.dir === 'E' ? bias : -bias);
+      r *= Math.exp(ew === 'E' ? bias : -bias);
     }
     if (link.crowd) r += g.traffic * STADIUM_BOOST * stadiumCrowd(g);
     return r;

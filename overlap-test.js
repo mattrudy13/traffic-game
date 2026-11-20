@@ -5,9 +5,9 @@
 var Sim = require("./sim.js");
 function seeded(seed){return function(){seed|=0;seed=(seed+0x6D2B79F5)|0;var t=Math.imul(seed^(seed>>>15),1|seed);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
 // The 4th setup adds buses, ambulances and snow (longer vehicles, cars moving over, weak brakes).
-// The rest are the other places (stop signs, roundabouts, merges), with Smart only.
+// The rest are the other places (stop signs, roundabouts, merges, curves), with Smart only.
 var total = 0;
-[[4, 0.29], [6, 0.6], [1, 0.6], [4, 0.4, true], [4, 0.29, false, 'main'], [4, 0.4, false, 'suburb'], [4, 0.29, false, 'crosstown']].forEach(function (setup) {
+[[4, 0.29], [6, 0.6], [1, 0.6], [4, 0.4, true], [4, 0.29, false, 'main'], [4, 0.4, false, 'suburb'], [4, 0.29, false, 'crosstown'], [4, 0.29, false, 'riverside'], [4, 0.29, false, 'oldtown']].forEach(function (setup) {
   (setup[3] ? ['smart'] : ['smart', 'wave']).forEach(function (st) {
     var extras = setup[2] ? { buses: true, ambulances: true, weather: 'snow' } : {};
     if (setup[3]) extras.place = setup[3];
