@@ -4,13 +4,14 @@
  *   link      one lane of one road, from the edge of one junction's box to the edge of the next
  *             (or a map edge). A car's `s` is the distance along its link. `stopLine` is where it
  *             waits before the next junction.
- *   node      a junction or a map edge. A junction has arms (one per road, sorted by angle) and
+ *   node      a junction, a map edge or a cul-de-sac (deadend). A junction has arms (one per road, sorted by angle) and
  *             movements (incoming link -> outgoing link, with a path through the box).
  *   conflict  two movements whose paths come within a car's width (plus a margin) of each other.
  *             Worked out once from geometry, instead of hand-written rules per crossing type.
  *   yieldTo   the conflicting movements this one must find a gap in before it goes: a left turn
  *             yields to oncoming traffic, a side street at a two-way stop yields to the main road.
  *   phase     a group of movements a light lets go together (two opposite arms, or one arm).
+ *   source    a link cars start on: from a map edge, or out of a cul-de-sac (`home`).
  *   d         a link's distance to exit: the longest drive to the edge using allowed movements.
  *             Every allowed movement leads to a link with a smaller d, which rules out gridlock
  *             (see buildDistances).
@@ -224,7 +225,7 @@
       var n = map.nodes[id];
       var node = {
         id: id, x: n.x, y: n.y, type: n.type || 'junction',
-        control: n.control ? Object.assign({}, n.control) : (n.type === 'edge' ? null : { type: 'none' }),
+        control: n.control ? Object.assign({}, n.control) : (n.type === 'edge' || n.type === 'deadend' ? null : { type: 'none' }),
         arms: [], inLinks: [], outLinks: [], movements: [], phases: []
       };
       if (node.type === 'edge') node.edge = edgeName(node, cfg);
@@ -320,7 +321,9 @@
     buildDistances(net);
 
     net.links.forEach(function (link) {
+      // Cars start at the map edge, and in cul-de-sacs (homes).
       if (link.from.type === 'edge') net.sources.push({ link: link, edge: link.from.edge, weight: link.weight });
+      if (link.from.type === 'deadend') net.sources.push({ link: link, home: true, weight: link.weight });
       if (link.to.type === 'edge') net.exits.push(link);
     });
     return net;
@@ -505,6 +508,8 @@
     links.forEach(function (l) {
       // A lane whose neighbour has a way out changes lanes instead (as at a lane closing today).
       if (out[l.id] || l.closed || l.siblings.some(function (sib) { return out[sib.id]; })) return;
+      // Every turn, not just the shortest: on Suburb, sending a T-junction's stem all one way
+      // piled it onto one busy crossing and cut the capacity mark from 80 to 65.
       l.out.slice().sort(function (a, b) { return a.len + shortest[a.to.id] - (b.len + shortest[b.to.id]); }).forEach(tryAllow);
     });
     // A move into a link that still has no way out would strand the car: take it back.

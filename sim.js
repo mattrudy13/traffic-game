@@ -95,6 +95,7 @@
     // Stop signs (places other than Downtown).
     signStop: 0.8,            // seconds a car stands at a stop line before it may go
     crossGap: 3,              // a car leaving a side-street stop sign needs the main road clear this many seconds
+    letInAfter: 60,           // ...but after this long at the line, a main-road car stopped in a queue lets it in
     // Roundabouts: one lane, driven counterclockwise (traffic keeps right).
     roundSpeed: 55,           // px/s on the circle
     roundYield: 45,           // an entering car needs the circle clear this many px upstream of its entry
@@ -151,6 +152,13 @@
   var SCHOOL_TRAFFIC = [
     [0, 0.15], [5, 0.15], [6.5, 0.5], [7.5, 1.6], [8.5, 1.4], [9.25, 0.6], [12, 0.6], [14.75, 0.7],
     [15.25, 1.3], [16, 0.8], [17.5, 1.1], [19, 0.7], [21, 0.4], [23, 0.2], [24, 0.15]
+  ];
+
+  // Cars leaving home from a cul-de-sac: mostly the morning, a little through the day and in the
+  // early evening. Only departures: nobody drives into a cul-de-sac, so there's no evening return.
+  var HOME_TRAFFIC = [
+    [0, 0.05], [5, 0.1], [6.25, 0.6], [7.25, 2.2], [8.25, 1.8], [9.25, 0.5], [12, 0.35], [15.5, 0.3],
+    [17.5, 0.45], [19, 0.5], [21, 0.2], [23, 0.08], [24, 0.05]
   ];
 
   // Places whose day has its own shape (the rest follow DAY_TRAFFIC). Their roads and junctions
@@ -228,6 +236,7 @@
     var place = options && Maps.PLACES[options.place] ? options.place : 'downtown';
     var schedule = place === 'downtown'
       ? (Maps.DOWNTOWN[lights] || Maps.DOWNTOWN[4]).map(function (r) { return { at: 0, axis: r[0], pos: r[1], avenue: r[0] === 'h' }; })
+      : Maps.PLACES[place].map ? []   // hand-written: openDueRoads puts the whole map in
       : Maps.PLACES[place].roads.map(function (r) { return { at: 0, axis: r[0], pos: r[1], avenue: !!r[2], weight: r[3] || 1 }; });
     var kind = options && KINDS.indexOf(options.kind) >= 0 ? options.kind : 'normal';
     var g = createGame(Object.assign({}, kind === 'sunday' ? SUNDAY_TURNS : {}, options, {
@@ -457,6 +466,14 @@
   // and rebuild the network from every road open so far.
   function openDueRoads(g) {
     var cfg = g.cfg, schedule = cfg.roadSchedule, opened = [];
+    var place = Maps.PLACES[cfg.place];
+    // A hand-written map (Suburb) has no schedule: its whole network goes in at the start.
+    if (place && place.map) {
+      if (g.net) return;
+      install(g, Net.buildNetwork(Maps.placeMap(cfg.place, null, cfg.width, cfg.height), cfg), []);
+      setShares(g, place);
+      return;
+    }
     while (g.nextRoad < schedule.length && schedule[g.nextRoad].at <= g.time) {
       var r = schedule[g.nextRoad++];
       var size = r.axis === 'v' ? cfg.width : cfg.height, avenue = !!r.avenue;
@@ -470,17 +487,20 @@
     }
     if (!opened.length) return;
 
-    var place = Maps.PLACES[cfg.place];
     var map = Maps.gridMap({
       roads: g.roads.map(function (rd) { return { axis: rd.axis, pos: rd.pos, avenue: rd.avenue, weight: rd.weight }; }),
       control: place && place.control
     }, cfg.width, cfg.height);
     install(g, Net.buildNetwork(map, cfg), opened);
-    // Busier and quieter lanes change whenever the map changes, so the player has to rebalance.
+    setShares(g, place);
+    if (g.time > 0) g.events.push({ type: 'road' });
+  }
+
+  // Busier and quieter lanes change whenever the map changes, so the player has to rebalance.
+  function setShares(g, place) {
     g.sources.forEach(function (link) {
       link.share = (0.6 + g.rng() * 0.8) * link.weight * (place && place.streetWeight && link.kind !== 'avenue' ? place.streetWeight : 1);
     });
-    if (g.time > 0) g.events.push({ type: 'road' });
   }
 
   function isLight(l) { return l.control === 'light'; }
@@ -488,6 +508,10 @@
   function placeHasLights(name) {
     var place = Maps.PLACES[name];
     if (!place) return true;
+    if (place.map) {
+      var nodes = place.map().nodes;
+      return Object.keys(nodes).some(function (id) { return nodes[id].control && nodes[id].control.type === 'light'; });
+    }
     var nv = place.roads.filter(function (r) { return r[0] === 'v'; }).length, nh = place.roads.length - nv;
     for (var vi = 0; vi < nv; vi++) for (var hi = 0; hi < nh; hi++) if (place.control(vi, hi).type === 'light') return true;
     return false;
@@ -554,6 +578,7 @@
       var was = oldSources[link.from.id + '#' + link.index];
       link.isSource = true;
       link.edge = link.from.edge;
+      link.home = link.from.type === 'deadend';   // a cul-de-sac: cars leave home on their own day curve
       if (was) {
         ['sourceId', 'offMap', 'pending', 'arrivals', 'rng', 'spawnTimer', 'share', 'crowd', 'busRoute', 'nextBus', 'buses',
          'busesWaiting', 'ambulancesWaiting', 'ambulances'].forEach(function (k) { if (k in was) link[k] = was[k]; });
@@ -845,7 +870,7 @@
   // kind 'cross') may go, nobody it yields to may be arriving within `seconds`. That's every car
   // heading for one of those movements, and every car not yet decided, on their lanes and the
   // lanes feeding them. ('cross' also waits for a car right at its line.)
-  function yieldClear(g, node, m, kind, seconds) {
+  function yieldClear(g, node, m, kind, seconds, waited) {
     var set = {}, links = [];
     m.yieldTo.forEach(function (y) {
       if (y.kind !== kind) return;
@@ -864,7 +889,12 @@
         var c = fl.cars[i], d = fl.stopLine - c.s;
         if (d < -0.001) continue;   // in the box: boxClear has it
         var cm = c.plan && c.plan.move;
-        if (kind === 'cross' && d < c.len + 10 && !(cm && cm.node === node && !set[cm.id])) return false;
+        // A main-road car at the line goes first, unless it is stopped there and either the road
+        // it's heading for is full ("don't block the box" holds it, so it can't go anyway) or the
+        // side-street car has waited `letInAfter` seconds (the main-road driver lets it in). Without
+        // that, a main road queued back from a roundabout kept a side street waiting for minutes.
+        if (kind === 'cross' && d < c.len + 10 && !(cm && cm.node === node && !set[cm.id]) &&
+            !(c.v < 5 && cm && cm.node === node && (!hasSpace(cm.to, c.slots) || waited >= g.cfg.letInAfter))) return false;
         if (coming(c, d)) return false;
       }
       for (var j = 0; j < fl.in.length; j++) {
@@ -926,10 +956,25 @@
     var mustStop = L.control === 'stop4' || !isMajor(L, link);
     if (mustStop && (car.lineWait || 0) < cfg.signStop) return false;
     if (L.control === 'stop4' && stop4Group(L) !== link.toArm.group) return false;
-    if (L.control === 'stop2' && mustStop && !yieldClear(g, link.to, m, 'cross', cfg.crossGap)) return false;
+    if (L.control === 'stop2' && mustStop && !yieldClear(g, link.to, m, 'cross', cfg.crossGap, car.lineWait || 0)) return false;
+    if (L.control === 'stop2' && !mustStop && car.v < 5 && lettingIn(g, L, m)) return false;
     if (!boxClear(L, m)) return false;
     if (plan.turn === 'left' && !yieldClear(g, link.to, m, 'gap', cfg.gapTime)) return false;
     return hasSpace(m.to, plan.turn === 'straight' ? car.slots : 1);
+  }
+
+  // A main-road car stopped at a two-way stop lets in a side-street car that has stood at its line
+  // for `letInAfter` seconds and could go (room on its way out) but for this car's movement.
+  function lettingIn(g, L, m) {
+    var node = L.node;
+    for (var i = 0; i < node.inLinks.length; i++) {
+      var link = node.inLinks[i], c = link.cars[0];
+      if (isMajor(L, link) || !c || !c.plan || !c.plan.move || c.v > 5) continue;
+      if ((c.lineWait || 0) < g.cfg.letInAfter || link.stopLine - c.s > 1) continue;
+      var cm = c.plan.move;
+      if (m.conflicts.indexOf(cm.id) >= 0 && hasSpace(cm.to, c.slots)) return true;
+    }
+    return false;
   }
 
   function isMajor(L, link) {
@@ -1301,6 +1346,10 @@
 
   // This entry lane's arrivals per second: the city-wide rate shaped by the traffic kind.
   function laneRate(g, link, rate) {
+    if (link.home && g.traffic !== null) {
+      var hour = hourOfDay(g);
+      return g.traffic * curveAt(g.kind === 'sunday' ? SUNDAY_TRAFFIC : HOME_TRAFFIC, hour) * link.share;
+    }
     var r = rate * link.share;
     if (g.kind === 'commute' && link.axis === 'ew') {
       var bias = curveAt(COMMUTE_BIAS, hourOfDay(g)) * COMMUTE_STRENGTH;
@@ -1373,7 +1422,8 @@
         var car = {
           id: g.nextId++,
           s: 0,
-          v: last ? Math.min(cfg.maxSpeed, last.v) : cfg.maxSpeed * 0.8,
+          // Pulling out of a driveway starts from a stop; from the map edge, the car drives in.
+          v: link.home ? 0 : last ? Math.min(cfg.maxSpeed, last.v) : cfg.maxSpeed * 0.8,
           len: cfg.carLength,
           wait: 0,        // seconds stopped at the current junction (drives the car's color)
           totalWait: edgeWait,   // seconds stopped over the whole trip, from arrival (drives the average wait)

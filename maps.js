@@ -3,17 +3,18 @@
  * from and a map editor could save later.
  *
  *   nodes: { id: { x, y, type, control } }
- *     type     edge (cars enter and leave here) | junction (default)
+ *     type     edge (cars enter and leave here) | junction (default) | deadend (a cul-de-sac:
+ *              cars start here and drive out, nobody drives in)
  *     control  { type: light | stop2 | stop4 | round, major: [ids of the neighbour nodes on the
  *              main road] (stop2 only) }
  *   roads: [ { from, to, kind, lanes: [forward, back], weight } ]
  *     kind     street | avenue
- *     lanes    lanes going from -> to, and to -> from
+ *     lanes    lanes going from -> to, and to -> from (0 for none)
  *     weight   scales the traffic that enters on this road (default 1)
  *
- * Every place today is a grid of straight roads running edge to edge, so the places are written as
- * grid specs and `gridMap` turns a spec into nodes and roads. Later stages add hand-written maps
- * (T-junctions, dead ends, curves) that skip the grid step.
+ * Downtown, Main Street and Crosstown are grids of straight roads running edge to edge, written as
+ * grid specs that `gridMap` turns into nodes and roads. Suburb is hand-written (T-junctions and
+ * cul-de-sacs); later maps will be too.
  */
 (function (root) {
   'use strict';
@@ -37,15 +38,7 @@
         return vi === 2 ? { type: 'light' } : { type: 'stop2', major: 'ew' };
       }
     },
-    suburb: {
-      roads: [['v', 0.22, false, 0.5], ['v', 0.52], ['v', 0.8, false, 0.5], ['h', 0.3, false, 0.5], ['h', 0.66]],
-      control: function (vi, hi) {
-        if (vi === 1 && hi === 1) return { type: 'round' };
-        if (vi === 1) return { type: 'stop2', major: 'ns' };
-        if (hi === 1) return { type: 'stop2', major: 'ew' };
-        return { type: 'stop4' };
-      }
-    },
+    suburb: { map: suburbMap },
     crosstown: {
       roads: [['v', 0.17], ['v', 0.5, true, 0.6], ['v', 0.83], ['h', 0.24], ['h', 0.64, true, 0.6]],
       control: function (vi, hi) {
@@ -67,6 +60,44 @@
   ];
 
   function lightsEverywhere() { return { type: 'light' }; }
+
+  // Suburb, hand-written ("streets and courts", chosen from the Stage 2 mockups). Two through roads
+  // cross at a roundabout. Quiet streets branch off them at T-junctions, where the side road stops,
+  // and short courts (cul-de-sacs, type `deadend`) branch off the quiet streets. Cars start in the
+  // courts and drive out; nobody drives in, so a court's road only has the lane leading out
+  // (lanes [1, 0], from the court to the junction). It is still drawn full width, like any street.
+  // Quiet streets carry half the traffic of the through roads at their map edge (weight 0.5).
+  function suburbMap() {
+    function edge(x, y) { return { x: x, y: y, type: 'edge' }; }
+    function stop2(x, y, a, b) { return { x: x, y: y, control: { type: 'stop2', major: [a, b] } }; }
+    function court(x, y) { return { x: x, y: y, type: 'deadend' }; }
+    var nodes = {
+      n666: edge(666, 0), s666: edge(666, 680), w449: edge(0, 449), e449: edge(1280, 449),
+      w170: edge(0, 170), e300: edge(1280, 300), s330: edge(330, 680),
+      R: { x: 666, y: 449, control: { type: 'round' } },
+      // On the north-south through road: the north street comes in from the west, the east street from the east.
+      M1: stop2(666, 170, 'n666', 'M2'), M2: stop2(666, 300, 'M1', 'R'),
+      // Along the north street, and the east street.
+      P1: stop2(230, 170, 'w170', 'P2'), P2: stop2(470, 170, 'P1', 'M1'), Q1: stop2(870, 300, 'M2', 'e300'),
+      // On the east-west through road: a street south to the edge, and a spine into the south-east courts.
+      S1: stop2(330, 449, 'w449', 'R'), S2: stop2(330, 575, 'S1', 's330'),
+      S3: stop2(960, 449, 'R', 'e449'), S4: { x: 960, y: 575, control: { type: 'stop4' } },
+      C1: court(230, 330), C2: court(470, 50), C3: court(870, 140), C5: court(520, 575), C6: court(790, 575), C7: court(1140, 575)
+    };
+    function road(from, to, weight, lanes) { return { from: from, to: to, kind: 'street', lanes: lanes || [1, 1], weight: weight || 1 }; }
+    function courtRoad(from, to) { return road(from, to, 0.5, [1, 0]); }
+    var roads = [
+      road('n666', 'M1'), road('M1', 'M2'), road('M2', 'R'), road('R', 's666'),
+      road('w449', 'S1'), road('S1', 'R'), road('R', 'S3'), road('S3', 'e449'),
+      road('w170', 'P1', 0.5), road('P1', 'P2', 0.5), road('P2', 'M1', 0.5),
+      road('M2', 'Q1', 0.5), road('Q1', 'e300', 0.5),
+      road('S1', 'S2', 0.5), road('S2', 's330', 0.5),
+      road('S3', 'S4', 0.5),
+      courtRoad('C1', 'P1'), courtRoad('C2', 'P2'), courtRoad('C3', 'Q1'),
+      courtRoad('C5', 'S2'), courtRoad('C6', 'S4'), courtRoad('C7', 'S4')
+    ];
+    return { nodes: nodes, roads: roads };
+  }
 
   // A grid spec -> {nodes, roads}. Roads run edge to edge and every crossing is a junction.
   // Node ids come from coordinates (j640_340, edges n640 / s640 / w340 / e340), so they stay the
@@ -120,6 +151,7 @@
   function placeMap(place, lights, width, height) {
     if (PLACES[place]) {
       var p = PLACES[place];
+      if (p.map) return p.map(width, height);
       var map = gridMap({
         roads: p.roads.map(function (r) { return { axis: r[0], pos: r[1], avenue: !!r[2], weight: r[3] || 1 }; }),
         control: p.control

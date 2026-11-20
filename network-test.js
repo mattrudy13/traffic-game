@@ -5,7 +5,8 @@
 //     with and yields to. The snapshot was saved when Stage 1 merged, after this network had been
 //     checked against the engine before it (same stop lines, turn paths and allowed turns), so a
 //     difference means the geometry or the rules changed;
-//   - conflicts, yields and phases come out the way the junction rules say they should;
+//   - conflicts, yields and phases come out the way the junction rules say they should, and
+//     Suburb's cul-de-sacs and T-junctions work as maps.js describes;
 //   - every movement's path joins its two links, and every allowed movement brings its car closer
 //     to an exit.
 //   node network-test.js          check
@@ -125,6 +126,29 @@ function stopRules(net) {
   });
 }
 
+// Suburb's T-junctions and cul-de-sacs: every court is a source with a way out, no lane leads into
+// a court, and at each two-way stop the side road yields to the main road it crosses or joins.
+function suburbRules(net) {
+  var courts = net.nodeList.filter(function (n) { return n.type === 'deadend'; });
+  check(courts.length === 6, 'suburb: ' + courts.length + ' cul-de-sacs, expected 6');
+  courts.forEach(function (c) {
+    check(c.inLinks.length === 0, 'suburb ' + c.id + ': a lane leads into the cul-de-sac');
+    var src = net.sources.filter(function (s) { return s.link.from === c; });
+    check(src.length === 1 && src[0].home && isFinite(src[0].link.d), 'suburb ' + c.id + ': not a source with a way out');
+  });
+  var tees = net.nodeList.filter(function (n) { return n.type === 'junction' && n.arms.length === 3; });
+  check(tees.length === 9, 'suburb: ' + tees.length + ' T-junctions, expected 9');
+  tees.forEach(function (node) {
+    if (node.control.type !== 'stop2') return;
+    node.movements.forEach(function (m) {
+      var minor = node.control.major.indexOf(m.from.toArm.toward.id) < 0;
+      var cross = m.yieldTo.filter(function (y) { return y.kind === 'cross'; }).length;
+      if (!minor) check(cross === 0, 'suburb ' + node.id + ': main road yields');
+      else check(cross > 0, 'suburb ' + node.id + ': side road ' + m.turn + ' yields to nobody');
+    });
+  });
+}
+
 var save = process.argv[2] === '--save';
 var saved = save ? null : JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'));
 Sim.PLACES.forEach(function (place) {
@@ -135,6 +159,7 @@ Sim.PLACES.forEach(function (place) {
     general(name, net);
     if (place === 'downtown') lightRules(name, net);
     if (place === 'main') stopRules(net);
+    if (place === 'suburb') suburbRules(net);
   });
 });
 [0, 35, 80, 140].forEach(function (t) {

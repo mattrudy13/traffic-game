@@ -61,22 +61,22 @@
   },
   "main smart": {
     "trips": 2092,
-    "wait": 8.1,
+    "wait": 7.8,
     "gaveUp": 0
   },
   "main timer": {
     "trips": 2092,
-    "wait": 7.6,
+    "wait": 6.8,
     "gaveUp": 0
   },
   "main wave": {
     "trips": 2092,
-    "wait": 6.8,
+    "wait": 6.5,
     "gaveUp": 0
   },
   "suburb smart": {
-    "trips": 1209,
-    "wait": 6.7,
+    "trips": 1303,
+    "wait": 9.8,
     "gaveUp": 0
   },
   "crosstown smart": {

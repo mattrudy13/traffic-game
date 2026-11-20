@@ -493,14 +493,26 @@
       ctx.lineTo(r.to.x, r.to.y);
       ctx.stroke();
     });
-    // Plain boxes over the junctions so lines and medians don't run through them.
+    // Plain boxes over the junctions so lines and medians don't run through them, and a round
+    // end on each cul-de-sac.
     ctx.fillStyle = palette.road;
+    drawn.net.nodeList.forEach(function (node) {
+      if (node.type !== 'deadend') return;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, courtRadius(node), 0, Math.PI * 2);
+      ctx.fill();
+    });
     drawn.lights.forEach(function (l) {
       if (l.control === 'round') return;
       junctionPath(l.node);
       ctx.fill();
     });
     drawn.lights.forEach(function (l) { if (l.control === 'round') drawRoundabout(l); });
+  }
+
+  // A cul-de-sac's turning circle: a bit wider than its road.
+  function courtRadius(node) {
+    return Math.max.apply(null, node.arms.map(function (a) { return a.half; })) + 12;
   }
 
   // A roundabout: a disc of road with a planted island in the middle, edged in white paint.
@@ -836,6 +848,7 @@
       var bw = ctx.measureText(text).width + 16, bh = 24, pad = 6;
       // The badge is drawn upright on screen, so on a turned map it takes up bh x bw of the world.
       var ew = drawRotated ? bh : bw, eh = drawRotated ? bw : bh;
+      if (q.lane.home) { drawHomeBadge(q.lane.from, text, bw, bh, ew, eh, pad); return; }
       // Beside the road where it enters: its centre line at the edge, and half its width.
       var lane = q.lane, road = lane.dir === 'S' || lane.dir === 'N' ? lane.from.x : lane.from.y, half = lane.road.half, x, y;
       if (!lane.dir) return;
@@ -856,6 +869,29 @@
       ctx.fillText(text, 0, 1);
       ctx.restore();
     });
+  }
+
+  // A cul-de-sac's badge goes past its turning circle, away from its road, or beside the circle
+  // when that would run off the map.
+  function drawHomeBadge(node, text, bw, bh, ew, eh, pad) {
+    var arm = node.arms[0], u = { x: Math.cos(arm.angle), y: Math.sin(arm.angle) }, n = rightOf(arm.angle);
+    var r = courtRadius(node);
+    function centre(dir) {
+      var reach = r + pad + (Math.abs(dir.x) * ew + Math.abs(dir.y) * eh) / 2;
+      return { x: node.x + dir.x * reach, y: node.y + dir.y * reach };
+    }
+    function fits(c) { return c.x - ew / 2 >= pad && c.x + ew / 2 <= W - pad && c.y - eh / 2 >= pad && c.y + eh / 2 <= H - pad; }
+    var c = [centre({ x: -u.x, y: -u.y }), centre(n), centre({ x: -n.x, y: -n.y })].filter(fits)[0] || centre({ x: -u.x, y: -u.y });
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    if (drawRotated) ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = palette.red;
+    ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 0, 1);
+    ctx.restore();
   }
 
   function roundRect(x, y, w, h, r) {
@@ -1082,7 +1118,7 @@
   // The same measure for the other places (lights count doesn't apply there). Suburb has no lights,
   // so its strategy doesn't matter; its quieter school-run day carries more before it overloads.
   var PLACE_CAPACITY = {
-    main: { smart: 70, timer: 60, wave: 60 },
+    main: { smart: 75, timer: 75, wave: 80 },
     suburb: { smart: 80, timer: 80, wave: 80 },
     crosstown: { smart: 50, timer: 50, wave: 50 }
   };
