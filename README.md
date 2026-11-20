@@ -33,11 +33,18 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 - `game.js`: draws the map on a canvas, handles clicks, the score strip and the start/pause/game-over card.
 - `style.css`: the "transit map" look (paper, ink, Archivo + IBM Plex Sans).
 - `tune.js`: a bot that plays many challenge games in Node so the difficulty can be checked: `node tune.js`.
+- `test.js`: runs all the tests below side by side and says which passed (each test exits with an
+  error when it finds a problem): `node test.js` (about 3 minutes).
+- `baseline.js`: records what every place and strategy does on three seeded days (trips, mean wait,
+  give-ups) and the challenge bot's survival, in `baseline.json`. `node baseline.js --check` compares
+  against it (within 10%). It's the yardstick for rewriting the engine (see ROAD-NETWORK-PLAN.md):
+  `node baseline.js --save` only when a change is meant to move the numbers.
 - `freeze-test.js`: runs every chill setup for two game days to check nothing ever gridlocks: `node freeze-test.js`.
-- `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes): `node overlap-test.js`.
+- `overlap-test.js`: checks no two cars are ever drawn on top of each other (turns, lane changes, stop signs, roundabouts, merges), on Downtown and every other place: `node overlap-test.js`.
 - `compare-test.js`: checks compare mode's two cities really get the same traffic: `node compare-test.js`.
 - `extras-test.js`: runs weather, buses and ambulances on every layout and strategy and checks nothing gridlocks, buses stop, no bus or ambulance spends over 200 s on the map, and compare maps still match: `node extras-test.js`.
 - `kinds-test.js`: runs every traffic kind on every layout and checks nothing gridlocks, no car drives on the closed lane, and the stadium crowd shows up: `node kinds-test.js`.
+- `places-test.js`: runs every place other than Downtown and checks no car stands still for 300 s: `node places-test.js`.
 
 ## How the cars move
 
@@ -157,6 +164,15 @@ can't leave. Turns at a roundabout may lead onto a road with more crossings (els
 lead straight out of the city, see Turning): every road out of the roundabout leads away from it,
 and no other crossing turns a car back toward it, so no circular wait can form.
 
+Running the overlap test on every place (it only covered Downtown at first) found cars drawn on
+top of each other in all three. Two causes: a car that had just crossed its stop line wasn't counted
+as in the intersection until it reached the box edge 4 px later, so a side-street car could pull
+out in front of it (harmless at lights, where the cross street is red, but not at stop signs); and a
+car entering a roundabout from a stop checked the circle once, then took about a second to get
+there while a car going round closed the gap. Now a car counts as in the intersection from its stop
+line, the clear distance an entering car needs grows the slower it starts, and a car going round
+gives way to one alongside it.
+
 Bugs found while building these, for the record: a car waiting at its yield line was first counted
 as on the circle (circling cars waited for it while it waited for them); cars going round are
 measured along their curved path, so lane checks have to skip them; and merging between a light and
@@ -167,9 +183,12 @@ The traffic slider's capacity mark per place (see Waiting at the edge for how it
 
 | | Smart | Timer | Green wave |
 |---|---|---|---|
-| Main Street | 55 | 60 | 60 |
-| Suburb | 75 | 75 | 75 |
-| Crosstown | 60 | 55 | 55 |
+| Main Street | 45 | 60 | 55 |
+| Suburb | 70 | 70 | 70 |
+| Crosstown | 55 | 55 | 55 |
+
+(Re-measured after the collision fixes below. Smart overloads Main Street early for the reason in
+Light strategies: the avenue's lanes outnumber the side street's, so the side streets wait.)
 
 ## Traffic kinds
 

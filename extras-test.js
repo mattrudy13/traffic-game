@@ -65,3 +65,4 @@ for (var i = 0; i < 360 * 60; i++) {
 console.log('compare: steps where arrivals, timetables or weather differ: ' + diff + (diff ? '   <-- PROBLEM' : ''));
 if (diff) problems++;
 console.log(problems ? problems + ' PROBLEMS' : 'all good');
+if (problems) process.exitCode = 1;   // so test.js can tell it failed

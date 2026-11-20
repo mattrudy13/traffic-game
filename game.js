@@ -1070,9 +1070,9 @@
   // The same measure for the other places (lights count doesn't apply there). Suburb has no lights,
   // so its strategy doesn't matter; its quieter school-run day carries more before it overloads.
   var PLACE_CAPACITY = {
-    main: { smart: 55, timer: 60, wave: 60 },
-    suburb: { smart: 75, timer: 75, wave: 75 },
-    crosstown: { smart: 60, timer: 55, wave: 55 }
+    main: { smart: 45, timer: 60, wave: 55 },
+    suburb: { smart: 70, timer: 70, wave: 70 },
+    crosstown: { smart: 55, timer: 55, wave: 55 }
   };
 
   // Name the slider value and shade the track past capacity. Above it the filled part turns

@@ -46,3 +46,4 @@ if (same[0].score !== same[1].score || same[0].tally.sum !== same[1].tally.sum) 
   console.log('Same seed and same lights did not end the day alike: ' + same[0].score + ' vs ' + same[1].score + '   <-- PROBLEM');
 } else console.log('Same seed and same lights: identical day (' + same[0].score + ' cars)');
 console.log(problems ? problems + ' PROBLEMS' : 'all good');
+if (problems) process.exitCode = 1;   // so test.js can tell it failed

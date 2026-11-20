@@ -1,6 +1,6 @@
 # Road network plan
 
-Status: planned, not started (2026-11-19). Replaces "every road is a straight line from one edge of
+Status: Stage 0 done (2026-11-19); Stage 1 not started. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -115,7 +115,9 @@ rotate the whole canvas, so nothing special is needed there.
 Each stage ends with the tests passing, a playable game, a commit, and README updates. Each stage
 that adds a map starts with mockups (desktop and phone, 2 to 4 options) before any drawing code.
 
-**Stage 0: safety net (small).**
+**Stage 0: safety net (small). Done 2026-11-19.** Running the overlap check on every place found
+cars colliding at stop signs and roundabouts in all three new places; fixed before saving the
+baseline (see README, Places).
 - `node test.js` runs every test script.
 - Record a baseline: for each place and strategy, trips, average wait and give-ups per seeded day,
   saved as JSON.

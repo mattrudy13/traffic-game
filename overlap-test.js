@@ -4,12 +4,15 @@
 // Run with:  node overlap-test.js   (takes ~1 min)
 var Sim = require("./sim.js");
 function seeded(seed){return function(){seed|=0;seed=(seed+0x6D2B79F5)|0;var t=Math.imul(seed^(seed>>>15),1|seed);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
-// The last setup adds buses, ambulances and snow (longer vehicles, cars moving over, weak brakes).
-[[4, 0.29], [6, 0.6], [1, 0.6], [4, 0.4, true]].forEach(function (setup) {
-  ['smart', 'wave'].forEach(function (st) {
+// The 4th setup adds buses, ambulances and snow (longer vehicles, cars moving over, weak brakes).
+// The rest are the other places (stop signs, roundabouts, merges), with Smart only.
+var total = 0;
+[[4, 0.29], [6, 0.6], [1, 0.6], [4, 0.4, true], [4, 0.29, false, 'main'], [4, 0.4, false, 'suburb'], [4, 0.29, false, 'crosstown']].forEach(function (setup) {
+  (setup[3] ? ['smart'] : ['smart', 'wave']).forEach(function (st) {
     var extras = setup[2] ? { buses: true, ambulances: true, weather: 'snow' } : {};
+    if (setup[3]) extras.place = setup[3];
     var g = Sim.createChill(setup[0], setup[1], Object.assign({ rng: seeded(5), strategy: st }, extras));
-    var turns = { left: 0, right: 0 }, seen = {}, overlaps = 0, samples = 0, worst = null;
+    var turns = { left: 0, right: 0, round: 0 }, seen = {}, overlaps = 0, samples = 0, worst = null;
     for (var i = 1; i <= 360 * 60; i++) {
       Sim.step(g, 1 / 60);
       var pts = [];
@@ -29,6 +32,9 @@ function seeded(seed){return function(){seed|=0;seed=(seed+0x6D2B79F5)|0;var t=M
         }
       }
     }
-    console.log(setup[0] + ' lights rate ' + setup[1] + (setup[2] ? ' + buses, ambulances, snow' : '') + ' ' + st + ': cars ' + g.score + ', left turns ' + turns.left + ', right turns ' + turns.right + ', overlapping-point samples ' + overlaps + (worst ? ' first at ' + JSON.stringify(worst) : ''));
+    total += overlaps;
+    console.log((setup[3] || setup[0] + ' lights') + ' rate ' + setup[1] + (setup[2] ? ' + buses, ambulances, snow' : '') + ' ' + st + ': cars ' + g.score + ', left turns ' + (turns.left || 0) + ', right turns ' + (turns.right || 0) + (turns.round ? ', roundabout trips ' + turns.round : '') + ', overlapping-point samples ' + overlaps + (worst ? ' first at ' + JSON.stringify(worst) : ''));
   });
 });
+console.log(total ? total + ' overlapping-point samples' : 'all good');
+if (total) process.exitCode = 1;   // so test.js can tell it failed

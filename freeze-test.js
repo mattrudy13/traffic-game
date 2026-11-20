@@ -29,3 +29,4 @@ var bad = 0;
   });
 });
 console.log(bad ? 'FROZE in ' + bad + ' setups' : 'no freezes');
+if (bad) process.exitCode = 1;   // so test.js can tell it failed

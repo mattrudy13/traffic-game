@@ -35,3 +35,4 @@ Sim.KINDS.forEach(function (kind) {
   });
 });
 console.log(problems ? problems + ' PROBLEMS' : 'all good');
+if (problems) process.exitCode = 1;   // so test.js can tell it failed

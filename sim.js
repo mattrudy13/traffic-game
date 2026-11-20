@@ -775,7 +775,9 @@
         }
         lane.stops.forEach(function (stop) {
           if (turning && stop === plan.stop) return;
-          if (car.s > stop.boxStart && rear < stop.boxEnd) {
+          // From the stop line on, not the box edge 4 px later: a car in that gap had already
+          // committed, and a side-street car at a stop sign could pull out in front of it.
+          if (car.s > stop.line && rear < stop.boxEnd) {
             stop.light.busy[lane.axis] = true;
             stop.light.throughIn[lane.dir] = true;
           }
@@ -1005,15 +1007,21 @@
     return list;
   }
 
-  // May a car enter here? Nobody on the circle within `roundYield` px upstream of the entry, and
-  // nobody's rear just past it (room to slot in).
+  // May a car enter here? Nobody on the circle close enough upstream to reach the entry before this
+  // car has slotted in, and nobody's rear just past it (room to slot in). A car starting from a stop
+  // needs about a second to reach the circle, and a car going round covers ~55 px in that time, so
+  // the clear distance needed grows the slower this car is (`roundYield` is the least it can be).
   function roundClear(g, light, arc, car) {
     var list = ringCars(g, light), R = arc.R, cfg = g.cfg;
+    var toRing = Math.max(0, arc.ringStart - (car.s - car.plan.stop.boxStart));
+    var v = Math.max(car.v, 1), speed = cfg.roundSpeed * g.wx.speed;
+    var tReach = v >= speed ? toRing / speed : (speed - v) / (cfg.accel * g.wx.accel) + toRing / ((v + speed) / 2);
+    var need = Math.max(cfg.roundYield, speed * (tReach + 0.3) + car.len);
     for (var i = 0; i < list.length; i++) {
       var o = list[i];
       if (o.car === car) continue;
       var upstream = mod2pi(arc.uIn - o.rear) * R;          // entry point ahead of the other car's rear
-      if (upstream < o.car.len + cfg.roundYield) return false;
+      if (upstream < o.car.len + need) return false;
       var ahead = mod2pi(o.rear - arc.uIn) * R;             // the other car's rear past the entry
       if (ahead < car.len + cfg.minGap) return false;
     }
@@ -1030,6 +1038,9 @@
       var gap = mod2pi(o.rear - front) * arc.R;
       // Only cars ahead on the circle, not ones just behind (whose rear wraps round to look far ahead).
       if (gap < 2 * Math.PI * arc.R - car.len - 4 && gap < best) best = gap;
+      // A car alongside, its front just ahead of ours (one slotting in from an entry): give way.
+      var frontGap = mod2pi(o.front - front) * arc.R;
+      if (frontGap > 0 && frontGap < o.car.len && -g.cfg.minGap < best) best = -g.cfg.minGap;
     }
     return best === Infinity ? Infinity : car.s + best - g.cfg.minGap;
   }

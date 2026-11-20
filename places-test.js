@@ -22,3 +22,4 @@ Sim.PLACES.filter(function (p) { return p !== 'downtown'; }).forEach(function (p
   console.log(place + ': longest standstill ' + line.join(', '));
 });
 console.log(bad ? bad + ' stuck' : 'all good');
+if (bad) process.exitCode = 1;   // so test.js can tell it failed
