@@ -239,27 +239,79 @@
 
   // ------------------------------------------------------------------ lane geometry
 
-  // Point on a lane's centre line, `s` px from where the lane enters the map.
-  function lanePoint(lane, s) {
-    switch (lane.dir) {
-      case 'E': return { x: s, y: lane.coord };
-      case 'W': return { x: lane.length - s, y: lane.coord };
-      case 'S': return { x: lane.coord, y: s };
-      default: return { x: lane.coord, y: lane.length - s };
+  // Lanes are the network's links (see network.js): each has a path, a heading and a width.
+  // Point and heading `s` px along a link (carrying on straight past either end).
+  function at(link, s) { return Sim.linkPoint(link, s); }
+
+  // The driver's right at a point with heading `a` (screen y points down).
+  function rightOf(a) { return { x: -Math.sin(a), y: Math.cos(a) }; }
+
+  // A path around a strip of a lane from s0 to s1, `width` px across, following the lane's path.
+  function bandPath(link, s0, s1, width) {
+    var steps = Math.max(1, Math.ceil((s1 - s0) / 16)), left = [], right = [];
+    for (var i = 0; i <= steps; i++) {
+      var p = at(link, s0 + (s1 - s0) * i / steps), r = rightOf(p.angle);
+      right.push({ x: p.x + r.x * width / 2, y: p.y + r.y * width / 2 });
+      left.push({ x: p.x - r.x * width / 2, y: p.y - r.y * width / 2 });
     }
+    ctx.beginPath();
+    right.concat(left.reverse()).forEach(function (q, k) { if (k) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+    ctx.closePath();
   }
 
-  // Rectangle covering a lane from s0 to s1, `width` px across.
-  function laneRect(lane, s0, s1, width) {
-    var len = s1 - s0, half = width / 2;
-    switch (lane.dir) {
-      case 'E': return { x: s0, y: lane.coord - half, w: len, h: width };
-      case 'W': return { x: lane.length - s1, y: lane.coord - half, w: len, h: width };
-      case 'S': return { x: lane.coord - half, y: s0, w: width, h: len };
-      default: return { x: lane.coord - half, y: lane.length - s1, w: width, h: len };
+  // Diagonal stripes over a strip of a lane (a closed lane), drawn in the lane's own frame.
+  function hatchBand(link, s0, s1, width, color, lineWidth, alpha, step) {
+    ctx.save();
+    bandPath(link, s0, s1, width);
+    ctx.clip();
+    ctx.fillStyle = palette.road;
+    ctx.fill();
+    var p = at(link, s0);
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    for (var x = -width - 20; x < s1 - s0 + width + 20; x += step) {
+      ctx.moveTo(x, width / 2);
+      ctx.lineTo(x + width, -width / 2);
     }
+    ctx.stroke();
+    ctx.restore();
   }
 
+  // Straight lines along every road, `offsets(road)` px to the right of its from -> to direction.
+  // The dash pattern is anchored to the map, so a road split into pieces at its junctions still
+  // dashes as one line.
+  function strokeAlongRoads(offsets, dashed) {
+    drawn.net.roads.forEach(function (r) {
+      var a = r.from, b = r.to, u = { x: Math.cos(r.angle), y: Math.sin(r.angle) }, n = rightOf(r.angle);
+      if (dashed) ctx.lineDashOffset = a.x * u.x + a.y * u.y;
+      ctx.beginPath();
+      offsets(r).forEach(function (o) {
+        ctx.moveTo(a.x + n.x * o, a.y + n.y * o);
+        ctx.lineTo(b.x + n.x * o, b.y + n.y * o);
+      });
+      ctx.stroke();
+    });
+    ctx.lineDashOffset = 0;
+  }
+
+  // A junction's box: the polygon through the corners where its roads' edges meet.
+  function junctionPath(node) {
+    var pts = [];
+    node.arms.forEach(function (arm) {
+      var u = { x: Math.cos(arm.angle), y: Math.sin(arm.angle) }, n = rightOf(arm.angle);
+      [-1, 1].forEach(function (side) {
+        pts.push({ x: node.x + u.x * arm.setback + n.x * arm.half * side, y: node.y + u.y * arm.setback + n.y * arm.half * side });
+      });
+    });
+    pts.sort(function (p, q) { return Math.atan2(p.y - node.y, p.x - node.x) - Math.atan2(q.y - node.y, q.x - node.x); });
+    ctx.beginPath();
+    pts.forEach(function (q, k) { if (k) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+    ctx.closePath();
+  }
 
   // ------------------------------------------------------------------ drawing
 
@@ -327,24 +379,17 @@
 
   // Wet roads: faint light stripes along each road, like a sheen.
   function drawWetRoads(amount) {
-    ctx.fillStyle = 'rgba(160, 190, 230, ' + (0.16 * amount) + ')';
-    drawn.roads.forEach(function (r) {
-      [-0.45, 0.45].forEach(function (f) {
-        var c = r.c + f * r.half;
-        if (r.axis === 'v') ctx.fillRect(c - 1.5, 0, 3, H);
-        else ctx.fillRect(0, c - 1.5, W, 3);
-      });
-    });
+    ctx.strokeStyle = 'rgba(160, 190, 230, ' + (0.16 * amount) + ')';
+    ctx.lineWidth = 3;
+    strokeAlongRoads(function (r) { return [-0.45 * r.half, 0.45 * r.half]; });
   }
 
   // Snow piled along the road edges.
   function drawSnowyEdges(amount) {
     ctx.globalAlpha = amount;
-    ctx.fillStyle = palette.snowEdge;
-    drawn.roads.forEach(function (r) {
-      if (r.axis === 'v') { ctx.fillRect(r.c - r.half, 0, 4, H); ctx.fillRect(r.c + r.half - 4, 0, 4, H); }
-      else { ctx.fillRect(0, r.c - r.half, W, 4); ctx.fillRect(0, r.c + r.half - 4, W, 4); }
-    });
+    ctx.strokeStyle = palette.snowEdge;
+    ctx.lineWidth = 4;
+    strokeAlongRoads(function (r) { return [-(r.half - 2), r.half - 2]; });
     ctx.globalAlpha = 1;
   }
 
@@ -402,14 +447,9 @@
   function drawBusStops() {
     ctx.fillStyle = palette.ink;
     drawn.lanes.forEach(function (lane) {
-      (lane.busStops || []).forEach(function (at) {
-        var p = lanePoint(lane, at - 26);
-        var out = lane.width / 2 + 11;
-        var x = p.x, y = p.y;
-        if (lane.dir === 'E') y += out; else if (lane.dir === 'W') y -= out;
-        else if (lane.dir === 'S') x -= out; else x += out;
-        roundRect(x - 6, y - 6, 12, 12, 2);
-      });
+      if (lane.busStop === undefined) return;
+      var p = at(lane, lane.busStop - 26), r = rightOf(p.angle), out = lane.width / 2 + 11;
+      roundRect(p.x + r.x * out - 6, p.y + r.y * out - 6, 12, 12, 2);
     });
   }
 
@@ -423,44 +463,49 @@
   }
 
   // Side streets get a dashed centre line. Avenues get a median down the middle and dashed
-  // lines between their two lanes each way.
+  // lines between their two lanes each way. Each road runs from junction centre to junction
+  // centre (or the map edge); the junction boxes are painted over them afterwards.
   function drawRoads() {
-    ctx.fillStyle = palette.road;
-    drawn.roads.forEach(function (r) {
-      if (r.axis === 'v') ctx.fillRect(r.c - r.half, 0, r.half * 2, H);
-      else ctx.fillRect(0, r.c - r.half, W, r.half * 2);
+    ctx.strokeStyle = palette.road;
+    ctx.lineCap = 'butt';
+    drawn.net.roads.forEach(function (r) {
+      ctx.lineWidth = r.half * 2;
+      ctx.beginPath();
+      ctx.moveTo(r.from.x, r.from.y);
+      ctx.lineTo(r.to.x, r.to.y);
+      ctx.stroke();
     });
     ctx.strokeStyle = palette.dash;
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 10]);
-    ctx.beginPath();
-    drawn.roads.forEach(function (r) {
-      var offsets = r.avenue ? [-(cfg.avenueMedian / 2 + cfg.avenueLaneWidth), cfg.avenueMedian / 2 + cfg.avenueLaneWidth] : [0];
-      offsets.forEach(function (o) {
-        if (r.axis === 'v') { ctx.moveTo(r.c + o, 0); ctx.lineTo(r.c + o, H); }
-        else { ctx.moveTo(0, r.c + o); ctx.lineTo(W, r.c + o); }
-      });
-    });
-    ctx.stroke();
+    strokeAlongRoads(function (r) {
+      if (r.kind !== 'avenue') return [0];
+      var o = r.spec.median / 2 + r.spec.laneWidth;
+      return [-o, o];
+    }, true);
     ctx.setLineDash([]);
-    ctx.fillStyle = palette.median;
-    drawn.roads.forEach(function (r) {
-      if (!r.avenue) return;
-      var m = cfg.avenueMedian;
-      if (r.axis === 'v') ctx.fillRect(r.c - m / 2, 0, m, H);
-      else ctx.fillRect(0, r.c - m / 2, W, m);
+    ctx.strokeStyle = palette.median;
+    drawn.net.roads.forEach(function (r) {
+      if (!r.spec.median) return;
+      ctx.lineWidth = r.spec.median;
+      ctx.beginPath();
+      ctx.moveTo(r.from.x, r.from.y);
+      ctx.lineTo(r.to.x, r.to.y);
+      ctx.stroke();
     });
-    // Plain boxes over the crossings so lines and medians don't run through them.
+    // Plain boxes over the junctions so lines and medians don't run through them.
     ctx.fillStyle = palette.road;
     drawn.lights.forEach(function (l) {
-      if (l.control !== 'round') ctx.fillRect(l.x - l.hx, l.y - l.hy, l.hx * 2, l.hy * 2);
+      if (l.control === 'round') return;
+      junctionPath(l.node);
+      ctx.fill();
     });
     drawn.lights.forEach(function (l) { if (l.control === 'round') drawRoundabout(l); });
   }
 
   // A roundabout: a disc of road with a planted island in the middle, edged in white paint.
   function drawRoundabout(l) {
-    var outer = l.hx, island = l.ring - cfg.roundLane / 2;
+    var outer = l.ring + cfg.roundLane / 2, island = l.ring - cfg.roundLane / 2;
     ctx.fillStyle = palette.road;
     ctx.beginPath();
     ctx.arc(l.x, l.y, outer, 0, Math.PI * 2);
@@ -475,8 +520,8 @@
   }
 
   // Yield "shark teeth": a row of small white triangles across the lane, pointing at the driver.
-  function drawYieldTeeth(lane, stop) {
-    var p = Sim.lanePoint(lane, stop.line - 3), a = p.angle, across = a + Math.PI / 2;
+  function drawYieldTeeth(lane) {
+    var p = at(lane, lane.stopLine - 3), a = p.angle, across = a + Math.PI / 2;
     var n = 4, w = lane.width - 6, size = w / n;
     ctx.fillStyle = palette.paint;
     for (var k = 0; k < n; k++) {
@@ -518,68 +563,32 @@
 
   // The closed lane: amber and ink stripes, a few cones where it starts, and a tag beside the road.
   function drawConstruction() {
-    var c = drawn.construction, lane = c.lane;
-    var r = laneRect(lane, c.from, c.to, lane.width - 2);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(r.x, r.y, r.w, r.h);
-    ctx.clip();
-    ctx.fillStyle = palette.road;
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = palette.closed;
-    ctx.lineWidth = 8;
-    ctx.globalAlpha = 0.9;
-    ctx.beginPath();
-    for (var x = r.x - r.h - 20; x < r.x + r.w + r.h + 20; x += 18) {
-      ctx.moveTo(x, r.y + r.h);
-      ctx.lineTo(x + r.h, r.y);
-    }
-    ctx.stroke();
-    ctx.restore();
+    var c = drawn.construction, lane = c.lane, to = Math.min(c.to, lane.stopLine === null ? c.to : lane.stopLine);
+    hatchBand(lane, c.from, to, lane.width - 2, palette.closed, 8, 0.9, 18);
     // Cones in a short diagonal where the lane closes, pushing traffic over.
     ctx.fillStyle = palette.cone;
     ctx.strokeStyle = palette.paper;
     ctx.lineWidth = 1.5;
     for (var k = 0; k < 4; k++) {
-      var p = lanePoint(lane, c.from + 6 + k * 9);
+      var p = at(lane, c.from + 6 + k * 9), r = rightOf(p.angle);
       var side = (k / 3 - 0.5) * (lane.width - 8);   // across the lane, curb side to median side
-      var px = p.x, py = p.y;
-      if (lane.axis === 'ew') py += (lane.dir === 'E' ? 1 : -1) * side; else px += (lane.dir === 'S' ? -1 : 1) * side;
       ctx.beginPath();
-      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.arc(p.x + r.x * side, p.y + r.y * side, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
-    var mid = lanePoint(lane, (c.from + Math.min(c.to, c.from + 500)) / 2);
-    var road = lane.road;
-    if (lane.axis === 'ew') drawLabel('LANE CLOSED', mid.x, road.c + road.half + 16, palette.closed, '#22252b', 12);
-    else drawLabel('LANE CLOSED', road.c + road.half + 60, mid.y, palette.closed, '#22252b', 12);
+    // The tag sits just outside the road on the closed lane's side.
+    var mid = at(lane, (c.from + Math.min(to, c.from + 500)) / 2), right = rightOf(mid.angle);
+    var out = lane.road.half - lane.offset + (lane.axis === 'ns' ? 60 : 16);
+    drawLabel('LANE CLOSED', mid.x + right.x * out, mid.y + right.y * out, palette.closed, '#22252b', 12);
   }
 
   // Where an avenue's outer lane ends before a roundabout, the closed stretch is painted over as
   // a hatched gore (like the striped area where real lanes end). Construction draws its own.
   function drawEndedLanes() {
     drawn.lanes.forEach(function (lane) {
-      lane.stops.forEach(function (stop) {
-        if (!stop.closed || (drawn.construction && drawn.construction.stop === stop)) return;
-        var r = laneRect(lane, stop.boxEnd, isFinite(stop.segmentEnd) ? stop.segmentEnd : lane.length, lane.width - 2);
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(r.x, r.y, r.w, r.h);
-        ctx.clip();
-        ctx.fillStyle = palette.road;
-        ctx.fillRect(r.x, r.y, r.w, r.h);
-        ctx.strokeStyle = palette.paint;
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (var x = r.x - r.h - r.w; x < r.x + r.w + r.h; x += 12) {
-          ctx.moveTo(x, r.y + r.h);
-          ctx.lineTo(x + Math.max(r.h, r.w), r.y + r.h - Math.max(r.h, r.w));
-        }
-        ctx.stroke();
-        ctx.restore();
-      });
+      if (!lane.closed || (drawn.construction && drawn.construction.lane === lane)) return;
+      hatchBand(lane, 0, lane.stopLine === null ? lane.len : lane.stopLine, lane.width - 2, palette.paint, 2, 0.5, 12);
     });
   }
 
@@ -636,50 +645,50 @@
   // A red glow on entry stretches that are filling up, so trouble is visible before it's too late.
   function drawDanger(queues) {
     queues.forEach(function (q) {
-      if (q.pressure < 0.6 || !q.lane.stops.length) return;
-      var lane = q.lane, stretch = lane.stops[0].line;
-      var a = lanePoint(lane, 0), b = lanePoint(lane, stretch);
+      if (q.pressure < 0.6 || q.lane.stopLine === null) return;
+      var lane = q.lane, stretch = lane.stopLine;
+      var a = at(lane, 0), b = at(lane, stretch);
       var strength = Math.min(1, (q.pressure - 0.6) / 0.8);
       var grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
       grad.addColorStop(0, 'rgba(229, 72, 77, ' + (0.35 + 0.5 * strength) + ')');
       grad.addColorStop(1, 'rgba(229, 72, 77, 0)');
-      var r = laneRect(lane, 0, stretch, lane.width);
       ctx.fillStyle = grad;
-      ctx.fillRect(r.x, r.y, r.w, r.h);
+      bandPath(lane, 0, stretch, lane.width);
+      ctx.fill();
     });
   }
 
   function barColor(light, lane) {
-    if (light.axis !== lane.axis || light.phase === 'allred') return palette.red;
-    // On a left-turn arrow only the avenue's inner (turn) lanes have green.
-    if (light.phase === 'arrow') return lane.road.avenue && lane.position === 'inner' ? palette.green : palette.red;
+    if (lane.phaseIndex !== light.cur || light.phase === 'allred') return palette.red;
+    // On a left-turn arrow only the lanes the arrow's turns go from have green.
+    if (light.phase === 'arrow') {
+      return light.phases[light.cur].arrow.some(function (m) { return m.from === lane; }) ? palette.green : palette.red;
+    }
     return light.phase === 'amber' ? palette.amber : palette.green;
   }
 
   function drawStopBars() {
     drawn.lanes.forEach(function (lane) {
-      lane.stops.forEach(function (stop) {
-        var L = stop.light;
-        if (L.control === 'stop2' || L.control === 'stop4') { drawStopSign(lane, stop); return; }
-        if (L.control === 'round') { if (!stop.laneEnds) drawYieldTeeth(lane, stop); return; }
-        if (L.control !== 'light') return;
-        var r = laneRect(lane, stop.line - 5, stop.line, lane.width - 4);
-        ctx.fillStyle = barColor(stop.light, lane);
-        roundRect(r.x, r.y, r.w, r.h, 2);
-      });
+      var L = lane.to.state;
+      if (!L) return;
+      if (L.control === 'stop2' || L.control === 'stop4') { drawStopSign(lane, L); return; }
+      if (L.control === 'round') { if (!lane.ends) drawYieldTeeth(lane); return; }
+      if (L.control !== 'light') return;
+      ctx.fillStyle = barColor(L, lane);
+      bandPath(lane, lane.stopLine - 5, lane.stopLine, lane.width - 4);
+      ctx.fill();
     });
   }
 
   // A stop sign: a painted white line across each lane that has to stop, and a small red
   // octagon at the curb. Signs get no round chip, since chips are the lights you can click.
-  function drawStopSign(lane, stop) {
-    var L = stop.light;
-    if (L.control === 'stop2' && lane.axis === L.major) return;
-    var r = laneRect(lane, stop.line - 4, stop.line, lane.width - 4);
+  function drawStopSign(lane, L) {
+    if (L.control === 'stop2' && L.major && L.major.indexOf(lane.toArm.toward.id) >= 0) return;
     ctx.fillStyle = palette.paint;
-    ctx.fillRect(r.x, r.y, r.w, r.h);
+    bandPath(lane, lane.stopLine - 4, lane.stopLine, lane.width - 4);
+    ctx.fill();
     if (lane.position === 'inner') return;
-    var p = Sim.lanePoint(lane, stop.line - 9), right = p.angle + Math.PI / 2, off = lane.width / 2 + 9;
+    var p = at(lane, lane.stopLine - 9), right = p.angle + Math.PI / 2, off = lane.width / 2 + 9;
     drawOctagon(p.x + Math.cos(right) * off, p.y + Math.sin(right) * off, 6.5);
   }
 
@@ -710,7 +719,7 @@
         ctx.translate(c.x, c.y);
         ctx.rotate(c.angle);
         // On a one-lane street, cars ahead of an ambulance ease toward the curb (driver's right).
-        if (car.aside && !lane.sibling) ctx.translate(0, 5);
+        if (car.aside && !lane.other) ctx.translate(0, 5);
         ctx.fillStyle = car.wait >= WAIT_ORANGE ? FED_UP_COLOR : car.wait >= WAIT_YELLOW ? WAIT_COLOR : palette.car;
         roundRect(-len / 2, -w / 2, len, w, w / 2);
         var signal = blinkOn && Sim.signal(lane, car, SIGNAL_FROM);
@@ -827,8 +836,10 @@
       var bw = ctx.measureText(text).width + 16, bh = 24, pad = 6;
       // The badge is drawn upright on screen, so on a turned map it takes up bh x bw of the world.
       var ew = drawRotated ? bh : bw, eh = drawRotated ? bw : bh;
-      var road = q.lane.road.c, half = q.lane.road.half, x, y;
-      switch (q.lane.dir) {
+      // Beside the road where it enters: its centre line at the edge, and half its width.
+      var lane = q.lane, road = lane.dir === 'S' || lane.dir === 'N' ? lane.from.x : lane.from.y, half = lane.road.half, x, y;
+      if (!lane.dir) return;
+      switch (lane.dir) {
         case 'S': x = road - half - pad - ew; y = pad; break;
         case 'N': x = road + half + pad; y = H - pad - eh; break;
         case 'E': x = pad; y = road + half + pad; break;
@@ -1059,20 +1070,21 @@
 
   // Slider value where, on a normal day with arrows on, drivers start giving up at rush hour
   // (the first value from which at least 2 of 3 seeded days had give-ups). Measured in steps
-  // of 5, so treat it as +-5. Smart overloads first: it compares raw car counts, and the
-  // avenue's 4 lanes outnumber the street's 2, so the street gets little green at rush hour.
+  // of 5, so treat it as +-5 (node capacity.js measures them all). On Downtown Smart overloads
+  // first: it compares raw car counts, and the avenue's 4 lanes outnumber the street's 2, so the
+  // street gets little green at rush hour.
   var CAPACITY = {
-    1: { smart: 55, timer: 65, wave: 65 },
-    2: { smart: 55, timer: 60, wave: 60 },
-    4: { smart: 55, timer: 60, wave: 60 },
-    6: { smart: 55, timer: 55, wave: 55 }
+    1: { smart: 65, timer: 85, wave: 75 },
+    2: { smart: 75, timer: 80, wave: 75 },
+    4: { smart: 60, timer: 65, wave: 70 },
+    6: { smart: 60, timer: 65, wave: 60 }
   };
   // The same measure for the other places (lights count doesn't apply there). Suburb has no lights,
   // so its strategy doesn't matter; its quieter school-run day carries more before it overloads.
   var PLACE_CAPACITY = {
-    main: { smart: 45, timer: 60, wave: 55 },
-    suburb: { smart: 70, timer: 70, wave: 70 },
-    crosstown: { smart: 55, timer: 55, wave: 55 }
+    main: { smart: 70, timer: 60, wave: 60 },
+    suburb: { smart: 80, timer: 80, wave: 80 },
+    crosstown: { smart: 50, timer: 50, wave: 50 }
   };
 
   // Name the slider value and shade the track past capacity. Above it the filled part turns

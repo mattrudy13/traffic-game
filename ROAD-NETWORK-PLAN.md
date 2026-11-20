@@ -1,9 +1,10 @@
 # Road network plan
 
-Status: Stage 0 done (2026-11-19). Stage 1a done on branch `stage-1-network` (2026-11-19):
-sim.js drives on the network from `maps.js` and `network.js`; all tests pass and `baseline.json`
-is re-saved (see "Stage 1a result" below). game.js can't draw the new network yet, so the game
-doesn't run on the branch until Stage 1b. Replaces "every road is a straight line from one edge of
+Status: Stage 0 done (2026-11-19). Stage 1 done on branch `stage-1-network` (2026-11-19), not
+yet merged: sim.js drives on the network from `maps.js` and `network.js` (1a), and game.js draws
+from it (1b); all tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see
+"Stage 1a result" and "Stage 1b result" below). Left before merging: delete `legacy-sim.js` and
+point `network-test.js` at fixed expectations instead of the old engine. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -158,6 +159,14 @@ collisions. One strategy ranking changed: on Crosstown, Smart went from worst to
 changes: any avenue light can show left arrows (adds one at Crosstown), and the extras test's
 "bus or ambulance stuck" limit went from 200 s to 300 s (the old engine reached 254 s on other
 seeds at that traffic).
+
+**Stage 1b result (2026-11-19).** game.js draws roads as strokes between junctions, junction
+boxes as polygons from the arms' edges, and every marking (stop bars, stop lines and octagons,
+yield teeth, hatched closed lanes, construction, bus stops, danger glow, edge badges) along its
+lane's path. Checked side by side with main's version on every place, day and night, desktop and a
+375 px phone: they match. `capacity.js` re-measured the slider's capacity marks and the README's
+strategy table; run on the old engine it reproduces the old marks (one cell off by 10), so the
+method matches. New marks are 5-20 higher, except Crosstown (55 to 50 on every strategy).
 
 **Stage 2: T-junctions, dead ends, one-way streets (medium).**
 - Still straight roads.

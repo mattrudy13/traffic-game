@@ -38,6 +38,8 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
   `network-test.js` can compare against it until Stage 1 merges.
 - `game.js`: draws the map on a canvas, handles clicks, the score strip and the start/pause/game-over card.
 - `style.css`: the "transit map" look (paper, ink, Archivo + IBM Plex Sans).
+- `capacity.js`: measures the traffic slider's capacity marks and the strategy table below, on
+  `sim.js` or another engine: `node capacity.js [--engine legacy-sim.js]` (a few minutes).
 - `tune.js`: a bot that plays many challenge games in Node so the difficulty can be checked: `node tune.js`.
 - `test.js`: runs all the tests below side by side and says which passed (each test exits with an
   error when it finds a problem): `node test.js` (about 3 minutes).
@@ -111,11 +113,6 @@ you can watch the average-wait chart move.
 
 ## Light strategies
 
-> Branch `stage-1-network`: the numbers in the tables below were measured on the engine before
-> Stage 1. Junction rules now come from the cars' paths (see ROAD-NETWORK-PLAN.md), which lowered
-> waits by 5–50% depending on the setup; `baseline.json` holds the new numbers. The tables and the
-> slider's capacity marks get re-measured in Stage 1b, once game.js draws the new network.
-
 - **Smart:** a light switches once the cars stopped on the red side outnumber *every* car within
   160 px of the green side (moving or not) by more than 2 to 1 (green lasts 3–20 s). An earlier
   version compared stopped cars on both sides. A flowing green has few stopped cars, so it flipped
@@ -126,21 +123,26 @@ you can watch the average-wait chart move.
   east it is, by the time a car needs to drive there. Eastbound groups hit green after green.
 
 How they compare: average wait over a game day (time queued off the map and give-ups included),
-averaged over 3 seeds:
+averaged over 3 seeded days with arrows on (`node capacity.js`):
 
 | Setup | Smart | Timer | Green wave |
 |---|---|---|---|
-| 4 lights, slider 30 | **8.3 s** | 15.9 s | 15.3 s |
-| 4 lights, slider 45 (default) | **27.2 s** | 30.2 s | 29.3 s |
-| 4 lights, slider 60 | 48.9 s | **43.8 s** | 46.1 s |
-| 6 lights, slider 45 | **21.9 s** | 32.9 s | 27.4 s |
-| 6 lights, slider 75 | 59.7 s | 68.2 s | **59.1 s** |
-| 6 lights, slider 90 | 73.3 s | 80.1 s | **68.9 s** |
-| 1 light, slider 45 | **20.9 s** | 26.5 s | 28.8 s |
-| 2 lights, slider 60 | 35.4 s | **35.3 s** | 37.7 s |
+| 4 lights, slider 30 | **5.2 s** | 10.4 s | 8.9 s |
+| 4 lights, slider 45 (default) | **9.2 s** | 16.3 s | 12.3 s |
+| 4 lights, slider 60 | 30.4 s | 25.9 s | **21.9 s** |
+| 6 lights, slider 45 | **6.4 s** | 16.0 s | 14.4 s |
+| 6 lights, slider 75 | 35.8 s | 40.3 s | **30.7 s** |
+| 6 lights, slider 90 | 51.9 s | 49.4 s | **41.5 s** |
+| 1 light, slider 45 | 14.4 s | **9.5 s** | 11.5 s |
+| 2 lights, slider 60 | 16.7 s | **16.1 s** | 17.6 s |
 
-Smart wins at light and normal traffic. Once the city is overloaded, Green wave's coordination
-between lights wins on 6 lights, which Smart (each light deciding alone) can't match.
+Smart wins at light and normal traffic on 4 and 6 lights. Once the city is busy, Green wave's
+coordination between lights wins, which Smart (each light deciding alone) can't match. On 1 and 2
+lights there is nothing to coordinate, and Timer's steady cycle does best.
+
+These numbers dropped when Stage 1 of ROAD-NETWORK-PLAN.md moved the junction rules onto the cars'
+paths (Downtown 4 lights, slider 45, Smart went from 16.3 s to 9.2 s): a car following another
+round the same corner no longer waits for the first one's rear to leave the box.
 
 ## Places
 
@@ -197,12 +199,13 @@ The traffic slider's capacity mark per place (see Waiting at the edge for how it
 
 | | Smart | Timer | Green wave |
 |---|---|---|---|
-| Main Street | 45 | 60 | 55 |
-| Suburb | 70 | 70 | 70 |
-| Crosstown | 55 | 55 | 55 |
+| Main Street | 70 | 60 | 60 |
+| Suburb | 80 | 80 | 80 |
+| Crosstown | 50 | 50 | 50 |
 
-(Re-measured after the collision fixes below. Smart overloads Main Street early for the reason in
-Light strategies: the avenue's lanes outnumber the side street's, so the side streets wait.)
+(Re-measured with `capacity.js` after Stage 1 of ROAD-NETWORK-PLAN.md. Before it, Smart overloaded
+Main Street first, at 45; now its one light carries the most. Crosstown went from 55 to 50 on every
+strategy: its waits are lower below capacity, but its roundabout merge gives out a little sooner.)
 
 ## Traffic kinds
 
@@ -271,12 +274,12 @@ mode the first map to overload sets it. Other traffic kinds and weather aren't m
 
 | | Smart | Timer | Green wave |
 |---|---|---|---|
-| 1 light | 55 | 65 | 65 |
-| 2 lights | 55 | 60 | 60 |
-| 4 lights | 55 | 60 | 60 |
-| 6 lights | 55 | 55 | 55 |
+| 1 light | 65 | 85 | 75 |
+| 2 lights | 75 | 80 | 75 |
+| 4 lights | 60 | 65 | 70 |
+| 6 lights | 60 | 65 | 60 |
 
-Smart overloads first even though its average wait is lowest. It compares raw car counts, and each
+On Downtown, Smart overloads first even though its average wait is lowest. It compares raw car counts, and each
 light is fed by 4 avenue lanes but only 2 street lanes, so a busy avenue nearly always outnumbers
 the street. On 1 light at slider 55, the street got 4 s of green in the evening rush to the
 avenue's 51 s, and its queue spilled off the map. Favoring the wider road is also why Smart's
