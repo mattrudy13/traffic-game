@@ -5,8 +5,9 @@
 //     with and yields to. The snapshot was saved when Stage 1 merged, after this network had been
 //     checked against the engine before it (same stop lines, turn paths and allowed turns), so a
 //     difference means the geometry or the rules changed;
-//   - conflicts, yields and phases come out the way the junction rules say they should, and
-//     Suburb's cul-de-sacs and T-junctions work as maps.js describes;
+//   - conflicts, yields and phases come out the way the junction rules say they should,
+//     Suburb's cul-de-sacs and T-junctions work as maps.js describes, and Riverside's and Old
+//     town's looser turning rule lets traffic onto the bridge and into the one-way pair;
 //   - every movement's path joins its two links, and every allowed movement brings its car closer
 //     to an exit.
 //   node network-test.js          check
@@ -68,7 +69,7 @@ function general(name, net) {
   net.movements.forEach(function (m) {
     var where = name + ' ' + m.node.id + ' ' + dirOf(m.from.heading) + ' ' + m.turn + (m.turn === 'round' ? ' ' + m.exit : '');
     var a = m.path.pts[0], b = m.path.pts[m.path.pts.length - 1];
-    check(near(a, m.from.path.pts[1]) && near(b, m.to.path.pts[0]), where + ': path does not join its links');
+    check(near(a, m.from.path.pts[m.from.path.pts.length - 1]) && near(b, m.to.path.pts[0]), where + ': path does not join its links');
     if (m.turn !== 'round') check(Math.abs(Math.atan2(Math.sin(a.angle - m.from.heading), Math.cos(a.angle - m.from.heading))) < 0.05, where + ': path starts at an angle');
     if (m.allowed) check(m.to.d < m.from.d, where + ': allowed but d does not shrink');
     if (m.turn === 'straight' && !m.to.closed) check(m.allowed, where + ': going straight on should always be allowed');
@@ -126,6 +127,28 @@ function stopRules(net) {
   });
 }
 
+// Riverside and Old town (`turns: 'through'`): cars on a bank road can turn onto the bridge, cars on
+// Old town's main street can turn into the one-way pair, and no lane runs the wrong way up a
+// one-way street.
+function throughRules(name, net) {
+  function allowed(from, at, to) {
+    return net.movements.some(function (m) { return m.allowed && m.from.from.id === from && m.node.id === at && m.to.to.id === to; });
+  }
+  if (name === 'riverside') {
+    check(allowed('T1', 'NB', 'SB') && allowed('T2', 'NB', 'SB'), 'riverside: north bank road cannot turn onto the bridge');
+    check(allowed('T3', 'SB', 'NB') && allowed('T4', 'SB', 'NB'), 'riverside: south bank road cannot turn onto the bridge');
+  }
+  if (name === 'oldtown') {
+    check(allowed('mN', 'L1', 'RE'), 'oldtown: main street cannot turn into the eastbound one-way');
+    check(allowed('mS', 'L2', 'RW'), 'oldtown: main street cannot turn into the westbound one-way');
+  }
+  net.roads.forEach(function (r) {
+    if (!r.oneway) return;
+    var back = net.links.filter(function (l) { return l.road === r && l.side === 'back'; });
+    check(back.length === 0, name + ': one-way road ' + r.from.id + '-' + r.to.id + ' has a lane the wrong way');
+  });
+}
+
 // Suburb's T-junctions and cul-de-sacs: every court is a source with a way out, no lane leads into
 // a court, and at each two-way stop the side road yields to the main road it crosses or joins.
 function suburbRules(net) {
@@ -160,6 +183,7 @@ Sim.PLACES.forEach(function (place) {
     if (place === 'downtown') lightRules(name, net);
     if (place === 'main') stopRules(net);
     if (place === 'suburb') suburbRules(net);
+    if (place === 'riverside' || place === 'oldtown') throughRules(name, net);
   });
 });
 [0, 35, 80, 140].forEach(function (t) {

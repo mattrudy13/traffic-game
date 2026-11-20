@@ -1,9 +1,11 @@
 /*
  * Green Wave road network: turns map data (maps.js) into what the simulation drives on.
  *
+ *   road      a stretch between two nodes: straight, or a smooth curve through bend points
+ *             (`line`, centre to centre). A one-way street has lanes one way only.
  *   link      one lane of one road, from the edge of one junction's box to the edge of the next
- *             (or a map edge). A car's `s` is the distance along its link. `stopLine` is where it
- *             waits before the next junction.
+ *             (or a map edge), following the road's curve. A car's `s` is the distance along its
+ *             link. `stopLine` is where it waits before the next junction.
  *   node      a junction, a map edge or a cul-de-sac (deadend). A junction has arms (one per road, sorted by angle) and
  *             movements (incoming link -> outgoing link, with a path through the box).
  *   conflict  two movements whose paths come within a car's width (plus a margin) of each other.
@@ -70,6 +72,50 @@
     return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, angle: a.angle + da * f };
   }
 
+  // A road's centre line, from one node's centre to the other's. Straight, unless the map gives
+  // bend points (`via`): then a smooth curve (Catmull-Rom) through them. `before` and `after` are
+  // where the road comes from and goes on to past its two ends, so a road that carries on through
+  // a junction leaves it at the angle it came in (each piece is its own road in the map data).
+  function centreLine(a, b, r) {
+    if (!r.via && !r.before && !r.after) return makePath([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]);
+    function pt(p) { return { x: p[0], y: p[1] }; }
+    var P = [r.before ? pt(r.before) : a, a].concat((r.via || []).map(pt), [b, r.after ? pt(r.after) : b]);
+    var pts = [];
+    for (var i = 1; i + 2 < P.length; i++) {
+      var p0 = P[i - 1], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2];
+      var c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+      var c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+      var steps = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / 8));
+      for (var k = i === 1 ? 0 : 1; k <= steps; k++) {
+        var t = k / steps, u = 1 - t;
+        // The cubic's derivative gives the exact heading, so the ends meet their junctions square.
+        var dx = 3 * u * u * (c1.x - p1.x) + 6 * u * t * (c2.x - c1.x) + 3 * t * t * (p2.x - c2.x);
+        var dy = 3 * u * u * (c1.y - p1.y) + 6 * u * t * (c2.y - c1.y) + 3 * t * t * (p2.y - c2.y);
+        pts.push({
+          x: u * u * u * p1.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p2.x,
+          y: u * u * u * p1.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p2.y,
+          angle: Math.atan2(dy, dx)
+        });
+      }
+    }
+    return makePath(pts);
+  }
+
+  // The same line driven the other way.
+  function reversePath(path) {
+    return makePath(path.pts.slice().reverse().map(function (p) { return { x: p.x, y: p.y, angle: wrap(p.angle + Math.PI) }; }));
+  }
+
+  // A lane along a curved road: the centre line from s0 to s1, moved `off` px to the driver's right.
+  function offsetPath(line, off, s0, s1) {
+    var pts = [], steps = Math.max(2, Math.ceil((s1 - s0) / 6));
+    for (var i = 0; i <= steps; i++) {
+      var p = pathPoint(line, s0 + (s1 - s0) * i / steps);
+      pts.push({ x: p.x - Math.sin(p.angle) * off, y: p.y + Math.cos(p.angle) * off, angle: p.angle });
+    }
+    return makePath(pts);
+  }
+
   // Quadratic Bézier from p0 to p2 bending through c, with exact headings from its derivative.
   function bezierPath(p0, c, p2) {
     var pts = [];
@@ -81,6 +127,22 @@
         x: u * u * p0.x + 2 * u * t * c.x + t * t * p2.x,
         y: u * u * p0.y + 2 * u * t * c.y + t * t * p2.y,
         angle: Math.atan2(dy, dx)
+      });
+    }
+    return makePath(pts);
+  }
+
+  // A smooth curve from a heading `ha` to b heading `hb` (cubic Hermite), with exact headings.
+  function hermitePath(a, ha, b, hb) {
+    var k = Math.hypot(b.x - a.x, b.y - a.y), ta = unit(ha), tb = unit(hb), pts = [];
+    for (var i = 0; i <= 16; i++) {
+      var t = i / 16, t2 = t * t, t3 = t2 * t;
+      var h1 = 2 * t3 - 3 * t2 + 1, h2 = t3 - 2 * t2 + t, h3 = -2 * t3 + 3 * t2, h4 = t3 - t2;
+      var d1 = 6 * t2 - 6 * t, d2 = 3 * t2 - 4 * t + 1, d3 = -6 * t2 + 6 * t, d4 = 3 * t2 - 2 * t;
+      pts.push({
+        x: h1 * a.x + h2 * k * ta.x + h3 * b.x + h4 * k * tb.x,
+        y: h1 * a.y + h2 * k * ta.y + h3 * b.y + h4 * k * tb.y,
+        angle: Math.atan2(d1 * a.y + d2 * k * ta.y + d3 * b.y + d4 * k * tb.y, d1 * a.x + d2 * k * ta.x + d3 * b.x + d4 * k * tb.x)
       });
     }
     return makePath(pts);
@@ -102,10 +164,10 @@
   function roundPath(node, from, to) {
     var R = node.ring, cx = node.x, cy = node.y;
     var p0 = endOf(from), p2 = startOf(to);
-    var inSide = from.heading + Math.PI, outSide = to.heading;
+    var inSide = from.heading + Math.PI, outSide = to.startHeading;
     // How far each lane runs from the centre, across its own heading.
     var offIn = Math.abs(cross(unit(from.heading), { x: p0.x - cx, y: p0.y - cy }));
-    var offOut = Math.abs(cross(unit(to.heading), { x: p2.x - cx, y: p2.y - cy }));
+    var offOut = Math.abs(cross(unit(to.startHeading), { x: p2.x - cx, y: p2.y - cy }));
     var thIn = inSide - (Math.asin(Math.min(0.9, offIn / R)) + 0.15);
     var thOut = outSide + Math.asin(Math.min(0.9, offOut / R));
     var sweep = mod2pi(thIn - thOut);
@@ -127,7 +189,7 @@
     for (var i = 1; i <= steps; i++) pts.push(ring(thIn - sweep * i / steps));
     var endIdx = pts.length - 1;
     pts.pop();
-    bend(ring(thOut), tangent(thOut), p2, unit(to.heading));
+    bend(ring(thOut), tangent(thOut), p2, unit(to.startHeading));
     var path = makePath(pts);
     path.R = R; path.uIn = -thIn; path.sweep = sweep;
     path.ringStart = path.dist[startIdx]; path.ringEnd = path.dist[endIdx];
@@ -143,11 +205,15 @@
   function movementPath(node, from, to, turn) {
     if (turn === 'round') return roundPath(node, from, to);
     var p0 = endOf(from), p2 = startOf(to);
-    if (turn === 'straight') return makePath([{ x: p0.x, y: p0.y }, { x: p2.x, y: p2.y }]);
+    if (turn === 'straight') {
+      if (!from.road.curved && !to.road.curved) return makePath([{ x: p0.x, y: p0.y }, { x: p2.x, y: p2.y }]);
+      // Between curved roads a straight line would start at an angle to the lane: bend gently instead.
+      return hermitePath(p0, from.heading, p2, to.startHeading);
+    }
     // A turn bends through the spot where the two lanes' centre lines cross. An avenue left turn
     // starts bending early instead (a few px into the box), so the two opposite left-turners pass
     // beside each other rather than crossing paths, the way real drivers do, and can both go on an arrow.
-    var c = lineMeet(p0, from.heading, p2, to.heading);
+    var c = lineMeet(p0, from.heading, p2, to.startHeading);
     if (turn === 'left' && from.kind === 'avenue') {
       var u = unit(from.heading);
       c = { x: p0.x + u.x * EARLY_BEND, y: p0.y + u.y * EARLY_BEND };
@@ -219,7 +285,10 @@
   }
 
   function buildNetwork(map, cfg) {
-    var net = { nodes: {}, nodeList: [], roads: [], links: [], movements: [], sources: [], exits: [], lights: [] };
+    var net = { nodes: {}, nodeList: [], roads: [], links: [], movements: [], sources: [], exits: [], lights: [],
+      // Hand-written maps may let cars turn onto any road that runs straight on to the edge (see buildDistances).
+      throughTurns: map.turns === 'through',
+      scenery: map.scenery || [] };
 
     Object.keys(map.nodes).forEach(function (id) {
       var n = map.nodes[id];
@@ -238,14 +307,22 @@
       var a = net.nodes[r.from], b = net.nodes[r.to];
       if (!a || !b) throw new Error('road ' + ri + ' joins a missing node: ' + r.from + ' -> ' + r.to);
       var kind = r.kind || 'street', spec = kindSpec(kind, cfg), lanes = r.lanes || [1, 1];
+      // A one-way street (`oneway`, lanes [n, 0]) is only as wide as its lanes, with them centred.
+      // A cul-de-sac's road also has lanes [1, 0] but stays a full-width street with its lane on the right.
+      var oneway = !!r.oneway && lanes[1] === 0;
+      var line = centreLine(a, b, r);
       var road = {
-        id: ri, from: a, to: b, kind: kind, lanes: lanes, spec: spec, weight: r.weight || 1,
+        id: ri, from: a, to: b, kind: kind, lanes: lanes, spec: spec, weight: r.weight || 1, oneway: oneway,
         angle: Math.atan2(b.y - a.y, b.x - a.x),
+        line: line, curved: line.pts.length > 2,
         // Half the road's width: the median plus its widest side.
-        half: spec.median / 2 + spec.laneWidth * Math.max(lanes[0], lanes[1])
+        half: oneway ? spec.laneWidth * lanes[0] / 2 : spec.median / 2 + spec.laneWidth * Math.max(lanes[0], lanes[1])
       };
-      road.armAtFrom = { road: road, node: a, toward: b, angle: road.angle, half: road.half, inLinks: [], outLinks: [] };
-      road.armAtTo = { road: road, node: b, toward: a, angle: wrap(road.angle + Math.PI), half: road.half, inLinks: [], outLinks: [] };
+      if (road.curved) road.lineBack = reversePath(line);
+      // Each end's arm points along the road as it leaves that junction.
+      var angleOut = line.pts[0].angle, angleIn = wrap(line.pts[line.pts.length - 1].angle + Math.PI);
+      road.armAtFrom = { road: road, node: a, toward: b, angle: angleOut, half: road.half, inLinks: [], outLinks: [] };
+      road.armAtTo = { road: road, node: b, toward: a, angle: angleIn, half: road.half, inLinks: [], outLinks: [] };
       a.arms.push(road.armAtFrom);
       b.arms.push(road.armAtTo);
       net.roads.push(road);
@@ -271,16 +348,28 @@
         var right = { x: -u.y, y: u.x };   // screen y points down, so this is the driver's right
         var siblings = [];
         for (var i = 0; i < count; i++) {
-          var off = road.spec.median / 2 + road.spec.laneWidth * (i + 0.5);
-          var p0 = { x: start.x + u.x * startArm.setback + right.x * off, y: start.y + u.y * startArm.setback + right.y * off };
-          var p1 = { x: end.x - u.x * endArm.setback + right.x * off, y: end.y - u.y * endArm.setback + right.y * off };
+          var off = road.oneway ? road.spec.laneWidth * (i + 0.5 - count / 2) : road.spec.median / 2 + road.spec.laneWidth * (i + 0.5);
+          var path, startHeading = heading;
+          if (road.curved) {
+            // Along the curve, from box edge to box edge; the heading changes as it goes.
+            var line = side[0] === 'fwd' ? road.line : road.lineBack;
+            path = offsetPath(line, off, startArm.setback, line.len - endArm.setback);
+            startHeading = path.pts[0].angle;
+            heading = path.pts[path.pts.length - 1].angle;
+          } else {
+            var p0 = { x: start.x + u.x * startArm.setback + right.x * off, y: start.y + u.y * startArm.setback + right.y * off };
+            var p1 = { x: end.x - u.x * endArm.setback + right.x * off, y: end.y - u.y * endArm.setback + right.y * off };
+            path = makePath([p0, p1]);
+          }
           var link = {
             id: net.links.length, road: road, side: side[0], index: i, count: count,
             position: count === 1 ? 'single' : i === 0 ? 'inner' : i === count - 1 ? 'curb' : 'middle',
             from: start, to: end, fromArm: startArm, toArm: endArm,
             kind: road.kind, offset: off, width: road.spec.laneWidth,
             maxSpeed: cfg.maxSpeed * road.spec.speed, weight: road.weight,
-            heading: heading, path: makePath([p0, p1]),
+            // `heading` is the way the lane points where it meets the next junction, `startHeading`
+            // where it leaves the last one. On a straight road they're the same.
+            heading: heading, startHeading: startHeading, path: path,
             out: [], in: [], siblings: siblings,
             closed: false,   // no car may be on it (the stretch before a roundabout a lane ends at)
             ends: false,     // no way on from its far end: cars must change lanes before then
@@ -289,7 +378,7 @@
           link.len = link.path.len;
           // Compass direction for roads along the map's axes (null otherwise).
           var q = Math.round(heading / (Math.PI / 2));
-          link.dir = Math.abs(heading - q * Math.PI / 2) < 0.01 ? ['W', 'N', 'E', 'S', 'W'][q + 2] : null;
+          link.dir = !road.curved && Math.abs(heading - q * Math.PI / 2) < 0.01 ? ['W', 'N', 'E', 'S', 'W'][q + 2] : null;
           link.axis = link.dir === 'E' || link.dir === 'W' ? 'ew' : link.dir ? 'ns' : null;
           link.stopLine = end.type === 'edge' ? null : link.len - cfg.stopGap;
           siblings.push(link);
@@ -459,7 +548,11 @@
   // Moves are picked in this order, each one only if it doesn't let a car come back to where it was:
   //   1. going straight on (always fine: straight roads run to an edge);
   //   2. turns onto a road that runs straight out of the map, and every way off a roundabout
-  //      (today's rules, kept so Stage 1 matches today's traffic);
+  //      (today's rules, kept so Stage 1 matches today's traffic). On a map with `turns: 'through'`
+  //      (Riverside, Old town) "runs straight out" also counts a road that goes on past more
+  //      junctions before it reaches the edge: straight on at a junction, any way off a roundabout.
+  //      Without it nobody could turn onto Riverside's bridge (past it is the other bridge light)
+  //      or from Old town's main street into the one-way pair (it ends at a roundabout);
   //   3. for a road side left with no way out at all (no lane on it can carry on, e.g. a
   //      T-junction's stem from Stage 2), its other turns, shortest way out first.
   // d is then the longest drive to the edge using allowed moves only, so every allowed move
@@ -502,8 +595,16 @@
       return out;
     }
 
+    // Does link l reach the map edge going straight on at junctions (any way off a roundabout)?
+    var straightRun = {};
+    function runsOut(l) {
+      if (straightRun[l.id] !== undefined) return straightRun[l.id];
+      straightRun[l.id] = false;   // a loop that never reaches the edge
+      straightRun[l.id] = l.to.type === 'edge' || l.out.some(function (m) { return (m.turn === 'straight' || m.turn === 'round') && runsOut(m.to); });
+      return straightRun[l.id];
+    }
     moves.forEach(function (m) { if (m.turn === 'straight') tryAllow(m); });
-    moves.forEach(function (m) { if (m.turn === 'round' || m.leadsOut) tryAllow(m); });
+    moves.forEach(function (m) { if (m.turn === 'round' || m.leadsOut || (net.throughTurns && runsOut(m.to))) tryAllow(m); });
     var out = waysOut();
     links.forEach(function (l) {
       // A lane whose neighbour has a way out changes lanes instead (as at a lane closing today).
