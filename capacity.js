@@ -4,12 +4,16 @@
 //     game.js shades the slider past it.
 //   table: average wait over a game day (give-ups included), averaged over 3 seeded days, for the
 //     setups in the README's "Light strategies" table.
-// Run with:  node capacity.js [--engine other-sim.js]   (takes a few minutes; setups run side by side).
+// Run with:  node capacity.js [--engine other-sim.js] [--place suburb]   (takes a few minutes; setups
+// run side by side).
 // --engine measures another copy of the engine, e.g. main's sim.js, to compare before and after.
+// --place measures one place's capacity marks only (no strategy table).
 var path = require('path'), spawn = require('child_process').spawn, os = require('os');
 var SEEDS = [11, 202, 3003];
 var argEngine = process.argv.indexOf('--engine');
 var ENGINE = argEngine >= 0 ? process.argv[argEngine + 1] : 'sim.js';
+var argPlace = process.argv.indexOf('--place');
+var ONLY_PLACE = argPlace >= 0 ? process.argv[argPlace + 1] : null;
 
 // One worker job: run the 3 seeded days for one setup and print a JSON line.
 if (process.argv[2] === '--job') {
@@ -55,7 +59,8 @@ function pool(tasks, size) {
 
 var STRATEGIES = ['smart', 'timer', 'wave'];
 var PLACES = [['downtown', 1], ['downtown', 2], ['downtown', 4], ['downtown', 6], ['main', 4], ['suburb', 4], ['crosstown', 4]];
-var TABLE = [[4, 30], [4, 45], [4, 60], [6, 45], [6, 75], [6, 90], [1, 45], [2, 60]];
+var TABLE = ONLY_PLACE ? [] : [[4, 30], [4, 45], [4, 60], [6, 45], [6, 75], [6, 90], [1, 45], [2, 60]];
+if (ONLY_PLACE) PLACES = PLACES.filter(function (p) { return p[0] === ONLY_PLACE; });
 
 // Each capacity search walks up the slider from 30 until a value overloads.
 function capacityTask(place, lights, strategy) {
