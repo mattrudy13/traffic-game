@@ -37,7 +37,8 @@ rest. Turned sideways, the map stays the normal way round with the same slim bar
 - `game.js`: draws the map on a canvas, handles clicks, the score strip and the start/pause/game-over card.
 - `style.css`: the "transit map" look (paper, ink, Archivo + IBM Plex Sans).
 - `capacity.js`: measures the traffic slider's capacity marks and the strategy table below, on
-  `sim.js` or another copy of the engine: `node capacity.js [--engine other-sim.js]` (a few minutes).
+  `sim.js` or another copy of the engine: `node capacity.js [--engine other-sim.js] [--place suburb]`
+  (a few minutes; `--place` measures one place's marks only).
 - `tune.js`: a bot that plays many challenge games in Node so the difficulty can be checked: `node tune.js`.
 - `test.js`: runs all the tests below side by side and says which passed (each test exits with an
   error when it finds a problem): `node test.js` (about 3 minutes).
@@ -147,16 +148,27 @@ round the same corner no longer waits for the first one's rear to leave the box.
 
 The **Place** picker (top of the Lights tab) changes the map. Picking one starts that place at the
 same time of day. Downtown is the original grid, all lights, and it alone has the 1/2/4/6 choice
-and the Stadium and Construction days. The others have a fixed layout where each crossing has its
+and the Stadium and Construction days. The others have a fixed layout where each junction has its
 own control, and signs and roundabouts run themselves (only lights can be clicked).
 
 - **Main Street:** one avenue with four side streets. The side streets have two-way stops onto it,
   except a light at the busiest crossing; the quiet back street has all-way stops. Side streets
   carry half the avenue's traffic per lane.
-- **Suburb:** no lights. Two through streets meet at a roundabout; where a through street crosses a
-  quiet one, the quiet one stops; quiet crossings are all-way stops. Quiet streets carry half the
-  traffic, and the day has a school run (a sharp morning peak and a smaller one mid-afternoon).
+- **Suburb:** no lights, and the first map that isn't a grid. Two through streets meet at a
+  roundabout. Quiet streets branch off them at T-junctions, where the side road stops, and six
+  cul-de-sacs (round ends) branch off the quiet streets; the one T-junction between two cul-de-sacs
+  is an all-way stop. Three quiet streets reach the map edge and carry half a through street's
+  traffic there. The day has a school run (a sharp morning peak and a smaller one mid-afternoon).
   The light controls hide here, and Suburb isn't offered in compare mode (both maps would be the same).
+
+  **Cul-de-sacs are homes.** Cars start there and drive out; nobody drives in (there are no
+  destinations, so nobody is coming home). Each one follows its own day: mostly morning departures
+  (peaking around 7:30), a little through the day and a small early-evening bump. Drivers starting
+  there count like everyone else in the average wait, "waiting to enter" and give-ups, and a full
+  one gets a "+N WAITING" badge beside its round end. Cars on quiet streets are mostly locals:
+  cars only turn onto a road that leads straight out of the map (see Turning), so through traffic
+  stays on the through streets. Where a side road meets a T-junction and can't go straight on, its
+  cars take either turn.
 - **Crosstown:** two avenues meet at a big one-lane roundabout. Each avenue's outer lane ends before
   it: where a light comes first, the lane is closed from that light on (hatched) and cars merge
   before the light; from the edge, they zipper-merge on the way in. Lights where a side street meets
@@ -165,7 +177,12 @@ own control, and signs and roundabouts run themselves (only lights can be clicke
 
 **Stop signs.** A car that has to stop stands at the line for 0.8 s first. At a two-way stop it then
 waits for the main road to be clear for 3 s both ways (a right turn only needs the near side, the
-traffic it merges into). At an all-way stop, cars go in the order they stopped: the first car's road
+traffic it merges into). A main-road car standing at the line doesn't block it when "don't block
+the box" is holding that car there (the road it's heading for is full). And once a side-street car
+has stood at its line for 60 s, a main-road car stopped in a queue lets it go first. Suburb needed
+both: its main road queues back from the roundabout at rush hour, and a side street joining that
+queue waited over 5 minutes for a gap that never came. (Main Street gained too: lower waits, and
+its capacity marks went up.) At an all-way stop, cars go in the order they stopped: the first car's road
 goes next, and anyone stopped on that road may go with it, as at a real four-way stop. A car whose
 way out is full is skipped, so one blocked car can't hold up the crossing (that could chain around
 a block into gridlock). After that the usual rules apply: cross traffic must be out of the box,
@@ -198,13 +215,16 @@ The traffic slider's capacity mark per place (see Waiting at the edge for how it
 
 | | Smart | Timer | Green wave |
 |---|---|---|---|
-| Main Street | 70 | 60 | 60 |
+| Main Street | 75 | 75 | 80 |
 | Suburb | 80 | 80 | 80 |
 | Crosstown | 50 | 50 | 50 |
 
 (Re-measured with `capacity.js` after Stage 1 of ROAD-NETWORK-PLAN.md. Before it, Smart overloaded
 Main Street first, at 45; now its one light carries the most. Crosstown went from 55 to 50 on every
-strategy: its waits are lower below capacity, but its roundabout merge gives out a little sooner.)
+strategy: its waits are lower below capacity, but its roundabout merge gives out a little sooner.
+Stage 2 re-measured Main Street and Suburb: Main Street rose from 70/60/60 with the two-way stop
+changes above; the new Suburb kept the old one's 80, though its average wait at slider 45 is
+9.8 s against the grid's 6.7 s, since a trip from home passes more stop signs.)
 
 ## Traffic kinds
 

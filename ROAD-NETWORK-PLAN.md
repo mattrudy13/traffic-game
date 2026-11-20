@@ -1,10 +1,12 @@
 # Road network plan
 
-Status: Stages 0 and 1 done (2026-11-19). Stage 1 was built on branch `stage-1-network`: sim.js
+Status: Stages 0, 1 and 2 done (2026-11-19). Stage 1 was built on branch `stage-1-network`: sim.js
 drives on the network from `maps.js` and `network.js` (1a) and game.js draws from it (1b); all
 tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see "Stage 1a result"
 and "Stage 1b result" below). The engine before it was removed once `network-test.js` had a
-snapshot (`network-baseline.json`) recorded while the network still matched it. Next: Stage 2. Replaces "every road is a straight line from one edge of
+snapshot (`network-baseline.json`) recorded while the network still matched it. Stage 2 (branch
+`stage-2-suburb`) gave Suburb T-junctions and cul-de-sacs; one-way streets moved to Stage 3 (see
+"Stage 2 result"). Next: Stage 3. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -20,6 +22,9 @@ ends, one-way streets, curves, diagonals and a highway with ramps.
 | New maps | Interchange, Riverside, Old town, and an upgraded Suburb |
 | Delivery | Staged; each stage ships on its own and leaves everything playable |
 | Challenge mode | Ported with behavior unchanged; no new features for it |
+| Suburb layout (Stage 2) | "Streets and courts" from the mockups: quiet streets off the through roads at T-junctions, six cul-de-sacs off them |
+| One-way streets | Moved to Stage 3 with Old town. Cars only turn onto roads that lead straight out, so a one-way street in Suburb would only carry cars that start on it |
+| Cul-de-sac drivers | Count like everyone else in the average wait, "waiting to enter" and give-ups |
 
 Assumed (say if wrong): the world stays 1280 × 680 and scales to the screen as now (no pan or zoom);
 traffic keeps right; Stadium and Construction stay Downtown-only; buses run only on avenues.
@@ -168,12 +173,33 @@ lane's path. Checked side by side with main's version on every place, day and ni
 strategy table; run on the old engine it reproduces the old marks (one cell off by 10), so the
 method matches. New marks are 5-20 higher, except Crosstown (55 to 50 on every strategy).
 
-**Stage 2: T-junctions, dead ends, one-way streets (medium).**
+**Stage 2: T-junctions and dead ends (medium). Done 2026-11-19.**
 - Still straight roads.
-- T-junction phases and stops, dead-end sources with their own day curve, and one-way links.
+- T-junction phases and stops, and dead-end sources with their own day curve. (One-way links moved
+  to Stage 3.)
 - Map: Suburb, first pass, with cul-de-sacs and T-junctions in place of some crossings.
 
-**Stage 3: curves and diagonals (medium to large).**
+**Stage 2 result (2026-11-19).** Suburb is the first hand-written map (`suburbMap` in maps.js): 9
+T-junctions, 6 cul-de-sacs, the roundabout, 7 ways in from the map edge (was 10). A cul-de-sac is a
+`deadend` node; its road has only the lane out (`lanes: [1, 0]`) and its link is a `home` source on
+its own day curve (`HOME_TRAFFIC` in sim.js). Nothing new was needed for T-junctions: the
+"no way out" tier of the distance-to-exit rule already handles a stem, and conflicts, yields and
+all-way stop groups work from geometry. Two things did need changing, both at two-way stops:
+- A main-road car standing at the line no longer blocks the side road when "don't block the box"
+  is holding it (its road ahead is full).
+- After 60 s at the line, a side-street car gets let in by a main-road car stopped in a queue.
+  Without these, the east street's left turn into the roundabout's queue starved for over 5 minutes
+  at rush hour (places-test's 300 s limit). With let-in at 15 s or 30 s Suburb's capacity mark fell
+  to 75 or 70; at 60 s it stays at 80.
+Tried and dropped: allowing only a stem's shortest way out (capacity 65: it piled every stem onto
+one crossing), and merging the two T-junctions on the north-south road into one crossing (worse:
+straight-across traffic had to cross both directions of a queued main road).
+Numbers: Suburb wait at slider 45 went from 6.7 s to 9.8 s, with no give-ups (a trip from home
+passes more stop signs); capacity mark 80, unchanged. Main Street improved: waits 8.1/7.6/6.8 s to
+7.8/6.8/6.5 s and capacity marks 70/60/60 to 75/75/80. Every other place is unchanged.
+
+**Stage 3: curves, diagonals and one-way streets (medium to large).**
+- One-way links (moved from Stage 2), used by a one-way pair in Old town that carries through traffic.
 - Curved and angled road paths, lane changes on curves, and junction boxes at odd angles.
 - Maps: Riverside, Old town, and Suburb's curved streets.
 
