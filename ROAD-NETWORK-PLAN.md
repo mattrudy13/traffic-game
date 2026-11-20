@@ -1,10 +1,10 @@
 # Road network plan
 
-Status: Stage 0 done (2026-11-19). Stage 1 done on branch `stage-1-network` (2026-11-19), not
-yet merged: sim.js drives on the network from `maps.js` and `network.js` (1a), and game.js draws
-from it (1b); all tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see
-"Stage 1a result" and "Stage 1b result" below). Left before merging: delete `legacy-sim.js` and
-point `network-test.js` at fixed expectations instead of the old engine. Replaces "every road is a straight line from one edge of
+Status: Stages 0 and 1 done (2026-11-19). Stage 1 was built on branch `stage-1-network`: sim.js
+drives on the network from `maps.js` and `network.js` (1a) and game.js draws from it (1b); all
+tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see "Stage 1a result"
+and "Stage 1b result" below). The engine before it was removed once `network-test.js` had a
+snapshot (`network-baseline.json`) recorded while the network still matched it. Next: Stage 2. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 

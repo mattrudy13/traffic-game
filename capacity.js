@@ -4,7 +4,8 @@
 //     game.js shades the slider past it.
 //   table: average wait over a game day (give-ups included), averaged over 3 seeded days, for the
 //     setups in the README's "Light strategies" table.
-// Run with:  node capacity.js [--engine legacy-sim.js]   (takes a few minutes; setups run side by side)
+// Run with:  node capacity.js [--engine other-sim.js]   (takes a few minutes; setups run side by side).
+// --engine measures another copy of the engine, e.g. main's sim.js, to compare before and after.
 var path = require('path'), spawn = require('child_process').spawn, os = require('os');
 var SEEDS = [11, 202, 3003];
 var argEngine = process.argv.indexOf('--engine');

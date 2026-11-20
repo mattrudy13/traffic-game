@@ -1,78 +1,65 @@
 // Network test: builds the road network (maps.js + network.js) for every place and challenge
-// stage, and checks it against what the engine before Stage 1 builds for the same map
-// (legacy-sim.js, kept until Stage 1 merges):
-//   - every stop line and box edge is in the same spot, and lanes that end or close match;
-//   - every turn today's engine offers exists as a movement, along the same path;
-//   - every turn today's gridlock rule allows is also allowed by distance-to-exit;
-//   - conflicts, yields and phases come out the way today's hand-written rules say they should;
+// stage and checks:
+//   - it matches network-baseline.json: every lane's ends and stop line, which lanes end or are
+//     closed, and every movement's turn, path length, whether it's allowed, and what it conflicts
+//     with and yields to. The snapshot was saved when Stage 1 merged, after this network had been
+//     checked against the engine before it (same stop lines, turn paths and allowed turns), so a
+//     difference means the geometry or the rules changed;
+//   - conflicts, yields and phases come out the way the junction rules say they should;
 //   - every movement's path joins its two links, and every allowed movement brings its car closer
 //     to an exit.
-// Run with:  node network-test.js   (takes ~1 s)
-var Sim = require('./legacy-sim.js'), Maps = require('./maps.js'), Net = require('./network.js');
+//   node network-test.js          check
+//   node network-test.js --save   re-save network-baseline.json (only for a change meant to move it)
+// Takes ~1 s.
+var fs = require('fs'), Sim = require('./sim.js'), Maps = require('./maps.js'), Net = require('./network.js');
 var cfg = Sim.CONFIG, W = cfg.width, H = cfg.height;
-var failures = [], extraTurns = 0, checks = 0;
+var SNAPSHOT = __dirname + '/network-baseline.json';
+var failures = [], checks = 0, snapshot = {};
 
 function check(ok, msg) { checks++; if (!ok && failures.length < 40) failures.push(msg); if (!ok) failures.count = (failures.count || 0) + 1; }
 function near(a, b, tol) { return Math.hypot(a.x - b.x, a.y - b.y) <= (tol || 0.01); }
 function key(p) { return Math.round(p.x * 10) / 10 + ',' + Math.round(p.y * 10) / 10; }
 function dirOf(h) { return ['E', 'S', 'W', 'N'][((Math.round(h / (Math.PI / 2)) % 4) + 4) % 4]; }
-var HEADING = { E: 0, S: Math.PI / 2, W: Math.PI, N: -Math.PI / 2 };
-
-function compare(name, g, net) {
-  var byEnd = {}, byStart = {};
+// A compact, rounded record of one map's network, for the snapshot.
+function round1(x) { return x === null || x === undefined ? null : Math.round(x * 10) / 10; }
+// FNV-1a, as 8 hex digits.
+function hash(text) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
+function linkKey(l) { return l.from.id + '>' + l.to.id + '#' + l.index; }
+function record(net) {
+  var links = {}, moves = {};
   net.links.forEach(function (l) {
-    byEnd[key(l.path.pts[l.path.pts.length - 1]) + dirOf(l.heading)] = l;
-    byStart[key(l.path.pts[0]) + dirOf(l.heading)] = l;
+    var a = l.path.pts[0], b = l.path.pts[l.path.pts.length - 1];
+    links[linkKey(l)] = [round1(a.x), round1(a.y), round1(b.x), round1(b.y), round1(l.stopLine), l.closed ? 1 : 0, l.ends ? 1 : 0];
   });
-  var stops = 0;
-  g.lanes.forEach(function (lane) {
-    lane.stops.forEach(function (stop, i) {
-      stops++;
-      var where = name + ' lane ' + lane.dir + '@' + lane.coord + ' stop ' + i;
-      var link = byEnd[key(Sim.lanePoint(lane, stop.boxStart)) + lane.dir];
-      check(!!link, where + ': no link ends at its box');
-      if (!link) return;
-      check(near(Net.linkPoint(link, link.stopLine), Sim.lanePoint(lane, stop.line)), where + ': stop line moved');
-      check(!!stop.laneEnds === link.ends, where + ': lane ends ' + !!stop.laneEnds + ' vs ' + link.ends);
-      var after = byStart[key(Sim.lanePoint(lane, stop.boxEnd)) + lane.dir];
-      check(!!after || stop.laneEnds, where + ': no link starts past its box');
-      if (after) check(!!stop.closed === after.closed, where + ': closed ' + !!stop.closed + ' vs ' + after.closed);
+  net.movements.forEach(function (m) {
+    var conflicts = m.conflicts.map(function (id) { var o = net.movements[id]; return linkKey(o.from) + '->' + linkKey(o.to); }).sort();
+    var yields = m.yieldTo.map(function (y) { var o = net.movements[y.id]; return y.kind + ':' + linkKey(o.from) + '->' + linkKey(o.to); }).sort();
+    // Conflicts and yields are kept as a count and a short hash of the sorted list, so the file
+    // stays small; a change still shows up, and the count says which way it went.
+    moves[linkKey(m.from) + '->' + linkKey(m.to)] = [m.turn, m.exit, m.allowed ? 1 : 0, round1(m.len),
+      conflicts.length + ':' + hash(conflicts.join(' ')), yields.length + ':' + hash(yields.join(' '))];
+  });
+  return { links: links, moves: moves };
+}
 
-      // The turns today's engine offers here, each with its own lane on the far side.
-      var expected = [];
-      var round = stop.light.control === 'round';
-      Object.keys(stop.turns).forEach(function (t) {
-        var turn = stop.turns[t];
-        // Today every avenue lane lists both turns, but a car only turns left from the inner lane
-        // and right from the curb lane (the other lane changes over first).
-        if (!round && ((t === 'left' && lane.position === 'curb') || (t === 'right' && lane.position === 'inner'))) return;
-        // A lane that ends at a roundabout lists its ways round too, but no car may take them.
-        if (stop.laneEnds) return;
-        var to = byStart[key(Sim.lanePoint(turn.lane, turn.stop.boxEnd)) + turn.lane.dir];
-        expected.push({ label: t, to: to, arc: turn.arc, oldAllowed: round ? true : turn.stop.capacity === Infinity && !turn.stop.closed });
-      });
-      if (!round && !stop.laneEnds) expected.push({ label: 'straight', to: after, oldAllowed: true });
-      expected.forEach(function (e) {
-        var m = link.out.filter(function (m) { return m.to === e.to && (round ? m.exit === e.label : m.turn === e.label); })[0];
-        check(!!m, where + ': no ' + e.label + ' movement');
-        if (!m) return;
-        if (e.arc) {
-          var p0 = e.arc.pts ? e.arc.pts[0] : e.arc.p0, p2 = e.arc.pts ? e.arc.pts[e.arc.pts.length - 1] : e.arc.p2;
-          check(near(m.path.pts[0], p0) && near(m.path.pts[m.path.pts.length - 1], p2), where + ' ' + e.label + ': path ends moved');
-          check(Math.abs(m.len - e.arc.len) < 0.5, where + ' ' + e.label + ': path length ' + m.len.toFixed(1) + ' vs ' + e.arc.len.toFixed(1));
-        }
-        if (e.oldAllowed && !(e.to && e.to.closed)) check(m.allowed, where + ' ' + e.label + ': allowed today, not by distance to exit');
-      });
-      check(link.out.length === expected.length, where + ': ' + link.out.length + ' movements, expected ' + expected.length);
-      link.out.forEach(function (m) {
-        if (m.allowed && m.turn !== 'straight' && m.turn !== 'round' && !expected.some(function (e) { return e.label === m.turn && e.oldAllowed; })) extraTurns++;
-      });
+function compare(name, net, saved) {
+  var now = record(net);
+  snapshot[name] = now;
+  if (!saved) return;
+  var was = saved[name];
+  check(!!was, name + ': not in network-baseline.json');
+  if (!was) return;
+  ['links', 'moves'].forEach(function (kind) {
+    Object.keys(was[kind]).forEach(function (k) {
+      check(k in now[kind], name + ' ' + kind + ' ' + k + ': gone');
+      if (k in now[kind]) check(JSON.stringify(now[kind][k]) === JSON.stringify(was[kind][k]), name + ' ' + kind + ' ' + k + ': was ' + JSON.stringify(was[kind][k]) + ', now ' + JSON.stringify(now[kind][k]));
     });
+    Object.keys(now[kind]).forEach(function (k) { check(k in was[kind], name + ' ' + kind + ' ' + k + ': new'); });
   });
-  var junctionLinks = net.links.filter(function (l) { return l.to.type === 'junction'; }).length;
-  check(junctionLinks === stops, name + ': ' + junctionLinks + ' links into junctions, ' + stops + ' stops today');
-  check(net.links.length === stops + g.lanes.length, name + ': ' + net.links.length + ' links, expected ' + (stops + g.lanes.length));
-  check(net.lights.length === g.lights.filter(Sim.isLight).length, name + ': light count');
 }
 
 // Rules that hold everywhere, whatever the map.
@@ -138,30 +125,34 @@ function stopRules(net) {
   });
 }
 
+var save = process.argv[2] === '--save';
+var saved = save ? null : JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'));
 Sim.PLACES.forEach(function (place) {
   (place === 'downtown' ? [1, 2, 4, 6] : [4]).forEach(function (n) {
     var name = place + (place === 'downtown' ? ' ' + n : '');
-    var g = Sim.createChill(n, 0.3, { seed: 1, place: place });
     var net = Net.buildNetwork(Maps.placeMap(place, n, W, H), cfg);
-    compare(name, g, net);
+    compare(name, net, saved);
     general(name, net);
     if (place === 'downtown') lightRules(name, net);
     if (place === 'main') stopRules(net);
   });
 });
 [0, 35, 80, 140].forEach(function (t) {
-  var schedule = cfg.roadSchedule.filter(function (r) { return r.at <= t; }).map(function (r) { return Object.assign({}, r, { at: 0 }); });
-  var g = Sim.createGame({ seed: 1, roadSchedule: schedule });
+  var name = 'challenge at ' + t + ' s';
   var net = Net.buildNetwork(Maps.challengeMap(t, W, H), cfg);
-  compare('challenge at ' + t + ' s', g, net);
-  general('challenge at ' + t + ' s', net);
+  compare(name, net, saved);
+  general(name, net);
 });
 
-console.log(checks + ' checks; distance to exit allows ' + extraTurns + ' turns today\'s rule does not');
+if (save) {
+  fs.writeFileSync(SNAPSHOT, JSON.stringify(snapshot) + '\n');
+  console.log('saved ' + Object.keys(snapshot).length + ' maps to network-baseline.json');
+}
+console.log(checks + ' checks');
 if (failures.length) {
   failures.forEach(function (f) { console.log('  ' + f); });
   console.log(failures.count + ' failed');
   process.exitCode = 1;
 } else {
-  console.log('network matches today\'s engine');
+  console.log('network matches network-baseline.json and the junction rules');
 }
