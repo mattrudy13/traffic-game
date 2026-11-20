@@ -6,9 +6,9 @@ more cars waiting.
 
 - **Chill (default):** nothing to lose. A day passes every 6 minutes (at 1×), with a morning
   and evening rush hour and a quiet night when the map dims to lamplight and cars get headlights.
-  The controls sit in three tabs: **Lights** (the place: Downtown, Main Street, Suburb or
-  Crosstown, see Places; on Downtown, 1, 2, 4 or 6 lights; how they decide: Smart, Timer or
-  Green wave; and left arrows), **Traffic** (how busy the city is, and what kind of day it is:
+  The controls sit in three tabs: **Lights** (the place: Downtown, Main Street, Suburb,
+  Crosstown, Riverside or Old town, see Places; on Downtown, 1, 2, 4 or 6 lights; how they
+  decide: Smart, Timer or Green wave; and left arrows), **Traffic** (how busy the city is, and what kind of day it is:
   see Traffic kinds) and **Weather & extras** (weather, buses, send an ambulance: see below).
   Speed (1×/2×/4×) stays beside the tabs. Click any light to switch it yourself; the strategy leaves
   it alone for 8 seconds. The strip shows the average wait per trip and a chart of it. Settings
@@ -174,6 +174,28 @@ own control, and signs and roundabouts run themselves (only lights can be clicke
   before the light; from the edge, they zipper-merge on the way in. Lights where a side street meets
   an avenue, all-way stops where two side streets meet. Avenues carry 0.6× traffic, since two lanes
   squeeze into one at the circle.
+- **Riverside:** a river winds west to east across the middle, with a curving bank road on each
+  side. One avenue bridge links them, with a light at each end, so every trip across the river uses
+  it and the two lights have to work together; the bridge holds about 5 cars a lane between them.
+  Diagonal streets come in from the map edges to meet the bank roads: lights where the two busier
+  ones meet them, two-way stops at the other two.
+- **Old town:** the west-east road splits at a small roundabout into a pair of one-way streets
+  (one lane each, arrows painted on) that curve round the market square and join again at a second
+  roundabout, so the pair carries all the west-east through traffic. A short main street crosses
+  the square north-south, with the town's only two lights where it meets the pair. Old lanes run
+  out to the edges at odd angles. The day is busy from mid-morning to evening, with only small rush
+  hours on top.
+
+**Curves, angles and turning on the new maps.** Riverside's and Old town's roads bend: each is a
+smooth curve through bend points, and its lanes follow it, so cars steer round the bends. Junctions
+work out their boxes, turn paths and phases from the angles the roads meet at, so a T-junction at
+70° needs nothing special. Cars on these two maps may also turn onto any road that runs straight on
+to the map edge, even past more junctions (across a roundabout, any way off it counts). Everywhere
+else a car only turns onto a road whose next junction is the edge (see Turning). Without that,
+nobody on a bank road could turn onto the bridge, since past it comes the other bridge light, and
+nobody on Old town's main street could join the one-way pair, which ends at a roundabout. Gridlock
+stays impossible: a turn is only allowed if no chain of allowed moves could bring a car back to
+where it was. On a typical day about 1 in 5 bridge crossings comes off a bank road.
 
 **Stop signs.** A car that has to stop stands at the line for 0.8 s first. At a two-way stop it then
 waits for the main road to be clear for 3 s both ways (a right turn only needs the near side, the
@@ -209,7 +231,9 @@ Bugs found while building these, for the record: a car waiting at its yield line
 as on the circle (circling cars waited for it while it waited for them); cars going round are
 measured along their curved path, so lane checks have to skip them; and merging between a light and
 the roundabout never worked, because each lane's stretch counts its own spaces and the inner lane's
-stayed full of moving cars.
+stayed full of moving cars. And in Stage 3, a roundabout with no exit straight on (Old town's
+east one: both ways off the one-way street count as lefts) left a car that had picked "straight
+on" with no way through, waiting for ever; cars now pick among the exits that exist.
 
 The traffic slider's capacity mark per place (see Waiting at the edge for how it's measured):
 
@@ -218,13 +242,18 @@ The traffic slider's capacity mark per place (see Waiting at the edge for how it
 | Main Street | 75 | 75 | 80 |
 | Suburb | 80 | 80 | 80 |
 | Crosstown | 50 | 50 | 50 |
+| Riverside | 65 | 55 | 55 |
+| Old town | 60 | 60 | 60 |
 
 (Re-measured with `capacity.js` after Stage 1 of ROAD-NETWORK-PLAN.md. Before it, Smart overloaded
 Main Street first, at 45; now its one light carries the most. Crosstown went from 55 to 50 on every
 strategy: its waits are lower below capacity, but its roundabout merge gives out a little sooner.
 Stage 2 re-measured Main Street and Suburb: Main Street rose from 70/60/60 with the two-way stop
 changes above; the new Suburb kept the old one's 80, though its average wait at slider 45 is
-9.8 s against the grid's 6.7 s, since a trip from home passes more stop signs.)
+9.8 s against the grid's 6.7 s, since a trip from home passes more stop signs. Stage 3 added
+Riverside and Old town and left the other places unchanged. Riverside's east stop sign first sat
+closer to the bridge, with room for only 5 westbound cars before the bridge light; on busy evenings
+that queue reached the edge and drivers gave up at slider 45. Moved east, there's room for 9.)
 
 ## Traffic kinds
 
@@ -233,7 +262,8 @@ compare mode, where it is shared so the race stays fair).
 
 - **Normal:** two rush hours; some streets are busier than others.
 - **Commute:** the same day, but in the morning most avenue traffic heads east "into town" (about
-  2.5× as many eastbound cars, 0.4× westbound at the peak) and in the evening it flips.
+  2.5× as many eastbound cars, 0.4× westbound at the peak) and in the evening it flips. (It applies
+  to every road entering from the west or east edge, including Riverside's and Old town's curved ones.)
 - **Stadium:** a slightly quieter day, then a night game lets out at 9:30 PM. For about two game
   hours a crowd pours in from the stadium in the north-east block: southbound on the east-most
   street and westbound on the top avenue.

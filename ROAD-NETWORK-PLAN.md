@@ -1,12 +1,13 @@
 # Road network plan
 
-Status: Stages 0, 1 and 2 done (2026-11-19). Stage 1 was built on branch `stage-1-network`: sim.js
+Status: Stages 0, 1 and 2 done (2026-11-19); Stage 3 done except Suburb's curved streets (2026-11-20). Stage 1 was built on branch `stage-1-network`: sim.js
 drives on the network from `maps.js` and `network.js` (1a) and game.js draws from it (1b); all
 tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see "Stage 1a result"
 and "Stage 1b result" below). The engine before it was removed once `network-test.js` had a
 snapshot (`network-baseline.json`) recorded while the network still matched it. Stage 2 (branch
 `stage-2-suburb`) gave Suburb T-junctions and cul-de-sacs; one-way streets moved to Stage 3 (see
-"Stage 2 result"). Next: Stage 3. Replaces "every road is a straight line from one edge of
+"Stage 2 result"). Stage 3 (branch `stage-3-curves`) added curved and angled roads, one-way
+streets, Riverside and Old town (see "Stage 3 result"). Next: Suburb's curved streets, then Stage 4. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -25,6 +26,11 @@ ends, one-way streets, curves, diagonals and a highway with ramps.
 | Suburb layout (Stage 2) | "Streets and courts" from the mockups: quiet streets off the through roads at T-junctions, six cul-de-sacs off them |
 | One-way streets | Moved to Stage 3 with Old town. Cars only turn onto roads that lead straight out, so a one-way street in Suburb would only carry cars that start on it |
 | Cul-de-sac drivers | Count like everyone else in the average wait, "waiting to enter" and give-ups |
+| Riverside layout (Stage 3) | "Meander" from the mockups: the river winds across the middle, a curving bank road each side, one avenue bridge with a light at each end, diagonal streets to the edges |
+| Old town layout (Stage 3) | "Split round the square": the west-east road splits into a one-way pair (one lane each) round the market square between two small roundabouts; a short main street with the only two lights crosses it |
+| Place picker | Six buttons, same as before: one row on desktop, three rows of two on a phone |
+| Old town's day | Busy from mid-morning to evening, small rush hours |
+| Turning on the new maps | Riverside and Old town (`turns: 'through'`) let cars turn onto any road that runs straight on to the edge, so bank roads feed the bridge and the main street feeds the one-way pair. The four older places keep the stricter rule and their numbers |
 
 Assumed (say if wrong): the world stays 1280 × 680 and scales to the screen as now (no pan or zoom);
 traffic keeps right; Stadium and Construction stay Downtown-only; buses run only on avenues.
@@ -202,6 +208,27 @@ passes more stop signs); capacity mark 80, unchanged. Main Street improved: wait
 - One-way links (moved from Stage 2), used by a one-way pair in Old town that carries through traffic.
 - Curved and angled road paths, lane changes on curves, and junction boxes at odd angles.
 - Maps: Riverside, Old town, and Suburb's curved streets.
+
+**Stage 3 result (2026-11-20).** Done except Suburb's curved streets, left for a short round of
+its own. In network.js a road may bend through `via` points (a Catmull-Rom curve, `before`/`after`
+carrying it smoothly through junctions; `chain` in maps.js fills these in), its lanes are offset
+copies of the curve, and each link has a start and an end heading. Arm angles, box setbacks, turn
+paths, groups and phases already worked from angles, so odd-angle junctions needed nothing more;
+"straight on" between curved roads is a short Hermite bend so it starts on the lane's heading.
+One-way streets are lanes [n, 0] with `oneway`, drawn narrower with arrows. Lane changes on a bend
+keep a car's place in proportion, though no Stage 3 map has a curved multi-lane road yet. game.js
+draws roads along their curves, plus a river, bridge railings and the square (`scenery`), turns the
+light's arrow to its phase's road, and places waiting badges beside angled entries.
+Two things turned up:
+- With today's turning rule nobody could turn onto Riverside's bridge or into Old town's one-way
+  pair, so those two maps use the looser rule (decisions table).
+- A roundabout with no exit straight on stranded a car that had picked "straight"; cars now pick
+  among the exits that exist (without using more random numbers on the older places).
+Riverside's east stop sign was moved away from the bridge: with room for only 5 cars before the
+bridge light, evening queues reached the map edge and drivers gave up at slider 45.
+Numbers at slider 45 (Smart / Timer / Wave): Riverside waits 9.9 / 16.9 / 15.7 s, capacity marks
+65 / 55 / 55; Old town waits 11.6 / 14.2 / 15.6 s, capacity marks 60 / 60 / 60. Every older place
+and the challenge are unchanged (baseline and network snapshot match).
 
 **Stage 4: highway, bridges and ramps (large).**
 - Bridge levels, merge and diverge nodes, highway speeds, and ramp meters left out unless needed.
