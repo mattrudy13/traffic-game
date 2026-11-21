@@ -21,7 +21,9 @@
  *   scenery    things drawn under the roads: { type: 'river', pts, width }, { type: 'bridge',
  *              from, to, half } (railings either side of a road over water), { type: 'square',
  *              x, y, rx, ry } (a paved square), { type: 'park', pts, pond: { x, y, rx, ry,
- *              angle } } (grass inside a smooth closed outline, a pond, and trees game.js scatters)
+ *              angle } } (grass inside a smooth closed outline, a pond, and trees game.js scatters), { type: 'median', from, to, width } (the strip between a highway's two carriageways)
+ *   level      on a road: 1 for a road that passes over others on a bridge (drawn on top; it only
+ *              meets other roads at the nodes it names, so crossing under it is free)
  *
  * Downtown, Main Street and Crosstown are grids of straight roads running edge to edge, written as
  * grid specs that `gridMap` turns into nodes and roads. Suburb, Riverside and Old town are
@@ -52,6 +54,7 @@
     suburb: { map: suburbMap },
     riverside: { map: riversideMap },
     oldtown: { map: oldtownMap },
+    interchange: { map: interchangeMap },
     crosstown: {
       roads: [['v', 0.17], ['v', 0.5, true, 0.6], ['v', 0.83], ['h', 0.24], ['h', 0.64, true, 0.6]],
       control: function (vi, hi) {
@@ -204,6 +207,56 @@
     return {
       nodes: nodes, roads: roads, turns: 'through',
       scenery: [{ type: 'square', x: 640, y: 340, rx: 300, ry: 92 }]
+    };
+  }
+
+  // Interchange ("diamond", Stage 4). A highway runs east-west across the middle on a bridge over
+  // the avenue. Each direction is its own one-way road with two lanes; an off-ramp leaves it before
+  // the avenue and an on-ramp joins it after, and the ramps meet the avenue at a light each side of
+  // the bridge (the diamond). A town street crosses the avenue at a light north and south, with
+  // stop signs where its side streets and cul-de-sacs join. An off-ramp holds 6 cars: when
+  // its light is slow, the queue reaches back onto the highway's curb lane.
+  function interchangeMap() {
+    function court(x, y) { return { x: x, y: y, type: 'deadend' }; }
+    function ramp(x, y, type) { return { x: x, y: y, control: { type: type } }; }
+    var nodes = {
+      // Highway: westbound on the north carriageway, eastbound on the south one.
+      eHW: edge(1280, 309), DW: ramp(960, 309, 'diverge'), MW: ramp(320, 309, 'merge'), wHW: edge(0, 309),
+      wHE: edge(0, 371), DE: ramp(320, 371, 'diverge'), ME: ramp(960, 371, 'merge'), eHE: edge(1280, 371),
+      // The avenue, north to south: town light, diamond lights either side of the bridge, town light.
+      n640: edge(640, 0), LN: light(640, 75), NT: light(640, 230), ST: light(640, 450), LS: light(640, 605), s640: edge(640, 680),
+      // Town streets.
+      wN: edge(0, 75), eN: edge(1280, 75), P: stop2(260, 75, 'wN', 'LN'), Q: stop2(1020, 75, 'LN', 'eN'),
+      wS: edge(0, 605), eS: edge(1280, 605), R: stop2(320, 605, 'wS', 'LS'), S: stop2(960, 605, 'LS', 'eS'),
+      s320: edge(320, 680), s960: edge(960, 680),
+      C1: court(260, 170), C2: court(1020, 170), C3: court(320, 510), C4: court(960, 510)
+    };
+    var highway = { kind: 'highway', lanes: [2, 0], oneway: true, level: 1, weight: 2 };
+    var rampRoad = { kind: 'ramp', lanes: [1, 0], oneway: true };
+    var town = { weight: 0.5 }, homes = { weight: 0.5, lanes: [1, 0] };
+    var roads = [].concat(
+      chain(nodes, ['eHW', 'DW', 'MW', 'wHW'], highway),
+      chain(nodes, ['wHE', 'DE', 'ME', 'eHE'], highway),
+      chain(nodes, ['n640', 'LN', 'NT', 'ST', 'LS', 's640'], { kind: 'avenue', lanes: [2, 2], weight: 0.5 }),
+      // Ramps run alongside the highway just clear of its edge (36 px out from the carriageway's
+      // middle) where they leave or join it, and meet the avenue at about 15°.
+      chain(nodes, ['DW', [895, 273], [840, 271], [720, 248], 'NT'], rampRoad),
+      chain(nodes, ['NT', [560, 248], [440, 271], [385, 273], 'MW'], rampRoad),
+      chain(nodes, ['DE', [385, 407], [440, 409], [560, 432], 'ST'], rampRoad),
+      chain(nodes, ['ST', [720, 432], [840, 409], [895, 407], 'ME'], rampRoad),
+      chain(nodes, ['wN', 'P', 'LN', 'Q', 'eN'], town),
+      chain(nodes, ['wS', 'R', 'LS', 'S', 'eS'], town),
+      chain(nodes, ['R', 's320'], { weight: 0.4 }), chain(nodes, ['S', 's960'], { weight: 0.4 }),
+      chain(nodes, ['C1', 'P'], homes), chain(nodes, ['C2', 'Q'], homes),
+      chain(nodes, ['C3', 'R'], homes), chain(nodes, ['C4', 'S'], homes)
+    );
+    return {
+      nodes: nodes, roads: roads, turns: 'through', wave: 'ns',
+      scenery: [
+        { type: 'median', from: [-20, 340], to: [1300, 340], width: 14 },
+        // Railings along the deck's edges where it passes over the avenue.
+        { type: 'bridge', from: [560, 340], to: [720, 340], half: 57, level: 1 }
+      ]
     };
   }
 

@@ -96,6 +96,14 @@
     signStop: 0.8,            // seconds a car stands at a stop line before it may go
     crossGap: 3,              // a car leaving a side-street stop sign needs the main road clear this many seconds
     letInAfter: 60,           // ...but after this long at the line, a main-road car stopped in a queue lets it in
+    // Highways and ramps (Interchange).
+    highwaySpeedFactor: 1.7,  // highway lanes are this much faster than side streets
+    rampSpeedFactor: 1.1,
+    mergeSetback: 40,         // px of highway a ramp junction's box covers on each side
+    rampSetback: 90,          // ...and of ramp: the taper between ramp and curb lane is 130 px long
+    mergeGap: 1.5,            // an on-ramp car needs the curb lane clear this many seconds
+    zipperAfter: 2,           // ...or, once it has stood at the end of the ramp this long, a slow highway car lets it in
+    exitShare: 0.25,          // share of highway cars that take each off-ramp they pass
     // Roundabouts: one lane, driven counterclockwise (traffic keeps right).
     roundSpeed: 55,           // px/s on the circle
     roundYield: 45,           // an entering car needs the circle clear this many px upstream of its entry
@@ -171,7 +179,7 @@
   // Places whose day has its own shape (the rest follow DAY_TRAFFIC). Their roads and junctions
   // are in maps.js.
   var PLACE_DAY = { suburb: SCHOOL_TRAFFIC, oldtown: OLDTOWN_TRAFFIC };
-  var PLACE_NAMES = ['downtown', 'main', 'suburb', 'crosstown', 'riverside', 'oldtown'];
+  var PLACE_NAMES = ['downtown', 'main', 'suburb', 'crosstown', 'riverside', 'oldtown', 'interchange'];
 
   // Seeded random numbers (mulberry32), so a city can be replayed exactly.
   function seeded(seed) {
@@ -373,9 +381,13 @@
     // The wave runs east-west, so it is timed to the speed of the east-west roads.
     var ewSpeed = cfg.maxSpeed * (g.roads.some(function (r) { return r.avenue; }) ? cfg.avenueSpeedFactor : 1);
     var waveSpeed = ewSpeed * cfg.waveSpeedFactor;
+    var ns = g.net && g.net.waveAxis === 'ns';
     g.lights.forEach(function (l) {
-      // Timer lights are not coordinated (random offsets); wave lights are offset by distance.
-      l.offset = strategy === 'wave' ? l.x / waveSpeed : g.rng() * cfg.cycleTime;
+      // Timer lights are not coordinated (random offsets); wave lights are offset by distance
+      // along the wave's axis, and each starts its cycle with that axis's green.
+      l.offset = strategy === 'wave' ? (ns ? l.y : l.x) / waveSpeed : g.rng() * cfg.cycleTime;
+      l.firstPhase = 0;
+      if (strategy === 'wave' && ns && l.phases) l.phases.forEach(function (p, i) { if (p.tag === 'ns') l.firstPhase = i; });
       l.holdUntil = 0;
     });
   }
@@ -771,7 +783,10 @@
     if (link.to.state.control === 'round') return roundPlan(g, link, forced, rng);
     var cfg = g.cfg, straight = straightOut(link), turn = forced || 'straight';
     rng = rng || g.rng;
-    if (!forced && g.chill) {
+    if (!forced && g.chill && link.to.state.control === 'diverge') {
+      // Before an off-ramp: a set share of highway drivers leave by it.
+      if (rng() < cfg.exitShare) turn = 'right';
+    } else if (!forced && g.chill) {
       var leftWeight = turnMove(link, 'left') ? cfg.turnLeft : 0, rightWeight = turnMove(link, 'right') ? cfg.turnRight : 0;
       // Keep the overall share of turning cars the same even when only one turn is allowed here.
       var r = rng() * (leftWeight + rightWeight) / (cfg.turnLeft + cfg.turnRight);
@@ -883,7 +898,8 @@
   // kind 'cross') may go, nobody it yields to may be arriving within `seconds`. That's every car
   // heading for one of those movements, and every car not yet decided, on their lanes and the
   // lanes feeding them. ('cross' also waits for a car right at its line.)
-  function yieldClear(g, node, m, kind, seconds, waited) {
+  function yieldClear(g, node, m, kind, seconds, waited, letIn) {
+    letIn = letIn || g.cfg.letInAfter;
     var set = {}, links = [];
     m.yieldTo.forEach(function (y) {
       if (y.kind !== kind) return;
@@ -907,7 +923,7 @@
         // side-street car has waited `letInAfter` seconds (the main-road driver lets it in). Without
         // that, a main road queued back from a roundabout kept a side street waiting for minutes.
         if (kind === 'cross' && d < c.len + 10 && !(cm && cm.node === node && !set[cm.id]) &&
-            !(c.v < 5 && cm && cm.node === node && (!hasSpace(cm.to, c.slots) || waited >= g.cfg.letInAfter))) return false;
+            !(c.v < 5 && cm && cm.node === node && (!hasSpace(cm.to, c.slots) || waited >= letIn))) return false;
         if (coming(c, d)) return false;
       }
       for (var j = 0; j < fl.in.length; j++) {
@@ -926,6 +942,7 @@
     var cfg = g.cfg, plan = car.plan, m = plan.move, L = link.to.state;
     if (!m || link.ends) return false;
     if (L.control === 'stop2' || L.control === 'stop4') return mayEnterSign(g, link, car);
+    if (L.control === 'merge') return mayEnterMerge(g, link, car);
     if (L.control === 'round') return plan.turn === 'round' && hasSpace(m.to) && roundClear(g, link, car);
     if (L.control !== 'light') return boxClear(L, m) && hasSpace(m.to, car.slots);
     if (L.phase === 'allred') return false;
@@ -976,14 +993,29 @@
     return hasSpace(m.to, plan.turn === 'straight' ? car.slots : 1);
   }
 
+  // Where an on-ramp joins the highway. The ramp car doesn't stop first, but needs the curb lane
+  // clear for `mergeGap` seconds; highway cars never wait for it. When the highway is crawling the
+  // two zip together: a ramp car that has stood at the end of the ramp for `zipperAfter` seconds is
+  // let in by a stopped highway car (the same let-in rule as a two-way stop, much sooner).
+  function mayEnterMerge(g, link, car) {
+    var cfg = g.cfg, L = link.to.state, m = car.plan.move;
+    if (isMajor(L, link)) {
+      if (car.v < 5 && lettingIn(g, L, m, cfg.zipperAfter)) return false;
+    } else if (!yieldClear(g, link.to, m, 'cross', cfg.mergeGap, car.lineWait || 0, cfg.zipperAfter)) {
+      return false;
+    }
+    return boxClear(L, m) && hasSpace(m.to, car.slots);
+  }
+
   // A main-road car stopped at a two-way stop lets in a side-street car that has stood at its line
   // for `letInAfter` seconds and could go (room on its way out) but for this car's movement.
-  function lettingIn(g, L, m) {
+  function lettingIn(g, L, m, after) {
+    after = after || g.cfg.letInAfter;
     var node = L.node;
     for (var i = 0; i < node.inLinks.length; i++) {
       var link = node.inLinks[i], c = link.cars[0];
       if (isMajor(L, link) || !c || !c.plan || !c.plan.move || c.v > 5) continue;
-      if ((c.lineWait || 0) < g.cfg.letInAfter || link.stopLine - c.s > 1) continue;
+      if ((c.lineWait || 0) < after || link.stopLine - c.s > 1) continue;
       var cm = c.plan.move;
       if (m.conflicts.indexOf(cm.id) >= 0 && hasSpace(cm.to, c.slots)) return true;
     }
@@ -1127,6 +1159,8 @@
       if (onCircle(link, car)) limit = Math.min(limit, ringLimit(g, link, car));
       if (m && plan.turn !== 'straight') {
         var cornerSpeed = (plan.turn === 'round' ? cfg.roundSpeed : plan.turn === 'left' ? cfg.leftTurnSpeed : cfg.rightTurnSpeed) * wx.speed;
+        // Leaving the highway is a gentle bend onto the ramp, taken at ramp speed.
+        if (m.node.control.type === 'diverge') cornerSpeed = m.to.maxSpeed * wx.speed;
         if (car.s > link.len) {
           maxSpeed = cornerSpeed;
           if (!roomToJoin(g, car)) limit = Math.min(limit, link.len + m.len);
@@ -1172,7 +1206,7 @@
       var gone = cars.shift();
       // Buses and ambulances aren't trips people are timing, so they stay out of the numbers.
       if (gone.bus || gone.ambulance) continue;
-      recordTrip(g, gone.totalWait, gone.id);
+      if (!gone.through) recordTrip(g, gone.totalWait, gone.id);
       g.score++;
     }
   }
@@ -1233,6 +1267,7 @@
       j.from.cars.splice(j.from.cars.indexOf(car), 1);
       car.s = Math.max(0, car.s - j.from.len - m.len);
       car.prevMove = m;
+      if (to.kind !== 'highway') car.through = false;
       var at = 0;
       while (at < to.cars.length && to.cars[at].s > car.s) at++;
       to.cars.splice(at, 0, car);
@@ -1414,9 +1449,7 @@
         g.tally.gaveUp++;
       }
       var last = link.cars[link.cars.length - 1];
-      var hasRoom = (!last || last.s - last.len >= cfg.minGap) && !link.ghosts.some(function (gh) {
-        return gh.s - gh.len < cfg.minGap;
-      });
+      var hasRoom = roomAtStart(g, link);
       // An ambulance goes ahead of everyone queued at the edge, then any bus.
       if (hasRoom && (link.ambulancesWaiting || link.busesWaiting)) {
         var amb = link.ambulancesWaiting > 0;
@@ -1432,6 +1465,14 @@
         link.cars.push(special);
         return;
       }
+      // On the highway a car arriving behind a stopped lane (a queue for the off-ramp) drives in
+      // on the other lane, as drivers coming up behind it would. Elsewhere it waits for its own.
+      var into = link;
+      if (!hasRoom && link.kind === 'highway' && link.other && roomAtStart(g, link.other)) {
+        into = link.other;
+        last = into.cars[into.cars.length - 1];
+        hasRoom = true;
+      }
       if (link.offMap > 0 && hasRoom) {
         link.offMap--;
         var arrival = link.pending.shift();
@@ -1446,12 +1487,22 @@
           wait: 0,        // seconds stopped at the current junction (drives the car's color)
           totalWait: edgeWait,   // seconds stopped over the whole trip, from arrival (drives the average wait)
           arrival: arrival.n,    // this car's number among the lane's arrivals (same car in both compare cities)
-          rng: seeded(mixSeed(g.seed, link.sourceId, arrival.n))
+          rng: seeded(mixSeed(g.seed, link.sourceId, arrival.n)),
+          // Only on the highway so far. A car that stays on it never meets a light or a sign, so its
+          // trip is left out of the average wait (hundreds of zero waits would hide everything else).
+          // Giving up at the edge still counts, so a highway stalled by a full off-ramp costs you.
+          through: link.kind === 'highway'
         };
-        car.plan = makePlan(g, link, null, car.rng);
-        link.cars.push(car);
+        car.plan = makePlan(g, into, null, car.rng);
+        into.cars.push(car);
       }
     });
+  }
+
+  // Room for a new car at the start of an entry lane.
+  function roomAtStart(g, link) {
+    var minGap = g.cfg.minGap, last = link.cars[link.cars.length - 1];
+    return (!last || last.s - last.len >= minGap) && !link.ghosts.some(function (gh) { return gh.s - gh.len < minGap; });
   }
 
   // ---------------------------------------------------------------- where to draw a car
@@ -1625,10 +1676,12 @@
         var greenSide = c[l.cur].all;
         if (redSide > cfg.smartRatio * greenSide || (redSide > 0 && l.greenFor >= cfg.autoMaxGreen)) flip(g, l);
       } else {
-        // Timer and wave: each phase gets an equal share of the cycle, east-west first.
+        // Timer and wave: each phase gets an equal share of the cycle, east-west first (north-south
+        // first for a north-south wave).
         var t = (g.time + lead - l.offset) % cfg.cycleTime;
         if (t < 0) t += cfg.cycleTime;
         var wanted = Math.min(l.phases.length - 1, Math.floor(t / (cfg.cycleTime / l.phases.length)));
+        wanted = (wanted + (l.firstPhase || 0)) % l.phases.length;
         if (l.cur !== wanted) flip(g, l);
       }
     });

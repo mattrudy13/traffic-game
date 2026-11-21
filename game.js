@@ -19,7 +19,8 @@
     stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00',
     rainInk: '#3460a0', snowEdge: '#ffffff', paint: '#f5f1e8', sign: '#c8323a', island: '#a9c48f',
     water: '#a9cfe0', bank: '#8db6c9', railing: '#f5f1e8', square: '#e9e1cf', squareEdge: '#c9bea8',
-    park: '#cfe2b8', parkEdge: '#a9c48f', tree: '#86ad6c'
+    park: '#cfe2b8', parkEdge: '#a9c48f', tree: '#86ad6c',
+    deck: '#3d4048', barrier: '#c9c2b2', shadow: '#22252b'
   };
   var NIGHT = {
     map: '#3b362e', grid: '#453f36', road: '#1c1b19', dash: '#5a554c', car: '#f4ead6',
@@ -30,7 +31,8 @@
     stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d',
     rainInk: '#aac8f0', snowEdge: '#e8e4dc', paint: '#d8d0c0', sign: '#e5484d', island: '#4f6143',
     water: '#2f4c5a', bank: '#3b5d6c', railing: '#d8d0c0', square: '#4a443a', squareEdge: '#5d564a',
-    park: '#3d4834', parkEdge: '#4f6143', tree: '#58744a'
+    park: '#3d4834', parkEdge: '#4f6143', tree: '#58744a',
+    deck: '#2b2a28', barrier: '#6f6858', shadow: '#000000'
   };
   // Everything outside the map, plus the bits drawn on it that use the strip's ink and paper.
   var FLIP = { paper: 1, ink: 1, muted: 1, track: 1, rush: 1, spark: 1, danger: 1, sideA: 1, sideAInk: 1,
@@ -69,14 +71,15 @@
     for (var i = 0; i < 220; i++) out.push({ x: r(), y: r(), k: 0.7 + r() * 0.6, size: r() });
     return out;
   })();
-  var PLACE_NAMES = { downtown: 'Downtown', main: 'Main Street', suburb: 'Suburb', crosstown: 'Crosstown', riverside: 'Riverside', oldtown: 'Old town' };
+  var PLACE_NAMES = { downtown: 'Downtown', main: 'Main Street', suburb: 'Suburb', crosstown: 'Crosstown', riverside: 'Riverside', oldtown: 'Old town', interchange: 'Interchange' };
   var PLACE_NOTES = {
     downtown: '',
     main: 'Main Street: side streets stop and wait for a gap in the avenue; one light at the busiest crossing. The back street has all-way stops.',
     suburb: 'Suburb: no lights. Winding side streets and cul-de-sacs stop for the through roads, which meet at a roundabout by the park. Mornings bring a school run.',
     crosstown: 'Crosstown: two avenues meet at a roundabout, each narrowing to one lane on the way in. Lights on the side streets.',
     riverside: 'Riverside: one bridge carries every trip across the river. Lights at both ends and on the bank roads.',
-    oldtown: 'Old town: one-way streets round the square, small roundabouts, and lights only on the main street. Busy all day.'
+    oldtown: 'Old town: one-way streets round the square, small roundabouts, and lights only on the main street. Busy all day.',
+    interchange: 'Interchange: a highway crosses the avenue on a bridge, with ramps to a light each side of it. A slow ramp light backs its exit queue onto the highway.'
   };
   // Stadium and Construction are built around Downtown's grid.
   var DOWNTOWN_KINDS = ['stadium', 'construction'];
@@ -355,8 +358,14 @@
     var queues = Sim.edgeQueues(drawn);
     if (kind === 'challenge') drawDanger(queues);
     drawStopBars();
-    if (darkness > 0) drawHeadlights(darkness);
-    drawCars(nowMs);
+    if (darkness > 0) drawHeadlights(darkness, 0);
+    drawCars(nowMs, 0);
+    // Interchange: the highway deck goes over everything below it, then its own cars.
+    if (drawn.net.roads.some(function (r) { return r.level > 0; })) {
+      drawDeck();
+      if (darkness > 0) drawHeadlights(darkness, 1);
+      drawCars(nowMs, 1);
+    }
     drawLights(darkness);
     drawOffMapBadges(queues);
     if (wx.rain > 0) drawRain(wx.rain, nowMs);
@@ -483,6 +492,7 @@
     ctx.lineCap = 'butt';
     ctx.lineJoin = 'round';
     drawn.net.roads.forEach(function (r) {
+      if (r.level > 0) return;   // drawn with the deck (drawDeck)
       ctx.lineWidth = r.half * 2;
       ctx.beginPath();
       traceRoad(r, 0);
@@ -493,7 +503,7 @@
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 10]);
     strokeAlongRoads(function (r) {
-      if (r.oneway) return [];
+      if (r.oneway || r.level > 0) return [];
       if (r.kind !== 'avenue') return [0];
       var o = r.spec.median / 2 + r.spec.laneWidth;
       return [-o, o];
@@ -518,7 +528,8 @@
       ctx.fill();
     });
     drawn.lights.forEach(function (l) {
-      if (l.control === 'round') return;
+      // Ramp junctions on the highway have no box of their own: the deck's lines run through.
+      if (l.control === 'round' || l.control === 'merge' || l.control === 'diverge') return;
       junctionPath(l.node);
       ctx.fill();
     });
@@ -553,6 +564,7 @@
       } else if (s.type === 'park') {
         drawPark(s);
       }
+      // A highway's median is drawn with the deck (drawDeck).
     });
   }
 
@@ -633,6 +645,83 @@
     return trees;
   }
 
+  // The highway on its bridge (roads with `level` 1), drawn over everything below: a soft shadow on
+  // the ground, the deck, the ends of the ramps where they meet it (so the ramps rise onto the deck
+  // instead of slipping under it), lane and edge lines, the median barrier, and railings where it
+  // passes over the avenue.
+  function drawDeck() {
+    var high = drawn.net.roads.filter(function (r) { return r.level > 0; });
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = palette.shadow;
+    high.forEach(function (r) {
+      ctx.lineWidth = r.half * 2 + 6;
+      ctx.beginPath();
+      traceRoad(r, 0);
+      ctx.save();
+      ctx.translate(0, 7);
+      ctx.stroke();
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = palette.deck;
+    high.forEach(function (r) {
+      ctx.lineWidth = r.half * 2;
+      ctx.beginPath();
+      traceRoad(r, 0);
+      ctx.stroke();
+    });
+    // Edge lines, then the ramps' ends over them (the curb line breaks where a ramp joins).
+    ctx.strokeStyle = palette.paint;
+    ctx.lineWidth = 2;
+    high.forEach(function (r) {
+      ctx.beginPath();
+      traceRoad(r, r.half - 4);
+      traceRoad(r, -(r.half - 4));
+      ctx.stroke();
+    });
+    ctx.strokeStyle = palette.deck;
+    ctx.lineWidth = cfg.avenueLaneWidth;
+    drawn.net.movements.forEach(function (m) {
+      if (!isRampTaper(m)) return;
+      ctx.beginPath();
+      m.path.pts.forEach(function (p, k) { if (k) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); });
+      ctx.stroke();
+    });
+    ctx.strokeStyle = palette.paint;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 10]);
+    strokeAlongRoads(function (r) { return r.level > 0 ? [0] : []; }, true);
+    ctx.setLineDash([]);
+    drawn.net.scenery.forEach(function (s) {
+      if (s.type !== 'median') return;
+      ctx.strokeStyle = palette.barrier;
+      ctx.lineWidth = s.width;
+      ctx.beginPath();
+      ctx.moveTo(s.from[0], s.from[1]);
+      ctx.lineTo(s.to[0], s.to[1]);
+      ctx.stroke();
+    });
+    drawBridges(1);
+  }
+
+  // The taper where a ramp leaves or joins the highway: the path between ramp and curb lane.
+  function isRampTaper(m) {
+    var t = m.node.control.type;
+    return (t === 'merge' || t === 'diverge') && (m.from.kind === 'ramp' || m.to.kind === 'ramp');
+  }
+
+  // Which level a car is drawn on: the highway's while on it or in a box joining or leaving it.
+  // (Ramps run alongside the deck, clear of it, until their taper.)
+  function carLevel(lane, car) {
+    if (lane.road.level > 0) return 1;
+    var m = car.plan && car.plan.move;
+    if (m && car.s > lane.stopLine && m.to.road.level > 0) return 1;
+    if (car.prevMove && car.prevMove.from.road.level > 0 && car.s - car.len < 0) return 1;
+    return 0;
+  }
+
   // A smooth line through points (Catmull-Rom, as roads use), added to the current path.
   function smoothLine(pts) {
     ctx.moveTo(pts[0][0], pts[0][1]);
@@ -644,9 +733,10 @@
   }
 
   // Railings along both sides of a road where it crosses water.
-  function drawBridges() {
+  function drawBridges(level) {
+    level = level || 0;
     drawn.net.scenery.forEach(function (s) {
-      if (s.type !== 'bridge') return;
+      if (s.type !== 'bridge' || (s.level || 0) !== level) return;
       var a = Math.atan2(s.to[1] - s.from[1], s.to[0] - s.from[0]), n = rightOf(a);
       ctx.strokeStyle = palette.railing;
       ctx.lineWidth = 4;
@@ -666,7 +756,7 @@
     ctx.fillStyle = palette.paint;
     ctx.globalAlpha = 0.75;
     drawn.lanes.forEach(function (lane) {
-      if (!lane.road.oneway || lane.index !== 0) return;
+      if (!lane.road.oneway || lane.index !== 0 || lane.kind === 'highway') return;
       var room = lane.stopLine === null ? lane.len : lane.stopLine;
       for (var s = 60; s < room - 30; s += 140) {
         var p = at(lane, s);
@@ -810,7 +900,7 @@
   }
 
   // Headlight beams: one gradient pointing "forward", rotated to each car's heading (curves too).
-  function drawHeadlights(darkness) {
+  function drawHeadlights(darkness, level) {
     var beam = ctx.createLinearGradient(0, 0, BEAM, 0);
     beam.addColorStop(0, 'rgba(255, 214, 150, ' + (0.42 * darkness) + ')');
     beam.addColorStop(1, 'rgba(255, 214, 150, 0)');
@@ -818,6 +908,7 @@
     var width = cfg.carWidth + 4;
     drawn.lanes.forEach(function (lane) {
       lane.cars.forEach(function (car) {
+        if (carLevel(lane, car) !== level) return;
         var p = Sim.carPoint(lane, car, 0);
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -894,11 +985,12 @@
 
   // Each car is drawn at the middle of its body, turned to its heading, so turning and
   // lane-changing cars follow their path. Cars blink their signal before a turn or lane change.
-  function drawCars(nowMs) {
+  function drawCars(nowMs, level) {
     var len = cfg.carLength, w = cfg.carWidth;
     var blinkOn = Math.floor(nowMs / SIGNAL_BLINK_MS) % 2 === 0;
     drawn.lanes.forEach(function (lane) {
       lane.cars.forEach(function (car) {
+        if (carLevel(lane, car) !== level) return;
         if (car.bus || car.ambulance) { drawSpecial(lane, car, nowMs); return; }
         var c = Sim.carPoint(lane, car, len / 2);
         ctx.save();
@@ -1302,7 +1394,8 @@
     suburb: { smart: 85, timer: 85, wave: 85 },
     riverside: { smart: 65, timer: 55, wave: 55 },
     oldtown: { smart: 60, timer: 60, wave: 60 },
-    crosstown: { smart: 50, timer: 50, wave: 50 }
+    crosstown: { smart: 50, timer: 50, wave: 50 },
+    interchange: { smart: 85, timer: 65, wave: 85 }
   };
 
   // Name the slider value and shade the track past capacity. Above it the filled part turns

@@ -58,7 +58,7 @@ function pool(tasks, size) {
 }
 
 var STRATEGIES = ['smart', 'timer', 'wave'];
-var PLACES = [['downtown', 1], ['downtown', 2], ['downtown', 4], ['downtown', 6], ['main', 4], ['suburb', 4], ['crosstown', 4], ['riverside', 4], ['oldtown', 4]];
+var PLACES = [['downtown', 1], ['downtown', 2], ['downtown', 4], ['downtown', 6], ['main', 4], ['suburb', 4], ['crosstown', 4], ['riverside', 4], ['oldtown', 4], ['interchange', 4]];
 var TABLE = ONLY_PLACE ? [] : [[4, 30], [4, 45], [4, 60], [6, 45], [6, 75], [6, 90], [1, 45], [2, 60]];
 if (ONLY_PLACE) PLACES = PLACES.filter(function (p) { return p[0] === ONLY_PLACE; });
 
@@ -96,7 +96,7 @@ pool(capTasks.concat(tableTasks), size).then(function (all) {
   });
   Object.keys(rows).forEach(function (name) {
     var r = rows[name];
-    console.log('  ' + name.padEnd(10) + STRATEGIES.map(function (st) { return st + ' ' + (r[st] !== undefined ? r[st] : r.smart); }).join('  '));
+    console.log('  ' + name.padEnd(13) + STRATEGIES.map(function (st) { return st + ' ' + (r[st] !== undefined ? r[st] : r.smart); }).join('  '));
   });
   console.log('\naverage wait over a day (3 seeds)');
   var table = {};

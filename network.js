@@ -28,6 +28,10 @@
   function kindSpec(kind, cfg) {
     if (kind === 'avenue') return { laneWidth: cfg.avenueLaneWidth, median: cfg.avenueMedian, speed: cfg.avenueSpeedFactor };
     if (kind === 'street') return { laneWidth: cfg.roadWidth / 2, median: 0, speed: 1 };
+    // A highway is drawn as two one-way roads, one per direction (`oneway`, lanes [2, 0]), so each
+    // carriageway can have its own ramps. Ramps are one-lane one-way roads between it and the streets.
+    if (kind === 'highway') return { laneWidth: cfg.avenueLaneWidth, median: 0, speed: cfg.highwaySpeedFactor };
+    if (kind === 'ramp') return { laneWidth: cfg.avenueLaneWidth, median: 0, speed: cfg.rampSpeedFactor };
     throw new Error('unknown road kind: ' + kind);
   }
 
@@ -266,6 +270,11 @@
   function setback(node, arm, cfg) {
     if (node.type !== 'junction') return 0;
     if (node.control.type === 'round') return node.ring + cfg.roundLane / 2;
+    // A ramp meets the highway at a shallow angle, where the crossing rule below would reach a
+    // couple of hundred px. Nothing crosses there, so the box is a fixed stretch: short on the
+    // highway, longer on the ramp, which runs alongside just clear of the highway's edge until
+    // then. Cars cross the box on a taper from one lane to the other (buildRampMovements).
+    if (isRampNode(node)) return arm.road.kind === 'ramp' ? cfg.rampSetback : cfg.mergeSetback;
     var best = 0;
     node.arms.forEach(function (other) {
       if (other === arm) return;
@@ -274,6 +283,11 @@
       best = Math.max(best, other.half / s + arm.half * Math.abs(Math.cos(a)) / s);
     });
     return best;
+  }
+
+  // Where a ramp joins the highway (`merge`) or leaves it (`diverge`).
+  function isRampNode(node) {
+    return !!node.control && (node.control.type === 'merge' || node.control.type === 'diverge');
   }
 
   function edgeName(node, cfg) {
@@ -288,6 +302,8 @@
     var net = { nodes: {}, nodeList: [], roads: [], links: [], movements: [], sources: [], exits: [], lights: [],
       // Hand-written maps may let cars turn onto any road that runs straight on to the edge (see buildDistances).
       throughTurns: map.turns === 'through',
+      // Green wave runs along this axis: 'ew' everywhere but Interchange, whose lights are all on one north-south avenue.
+      waveAxis: map.wave || 'ew',
       scenery: map.scenery || [] };
 
     Object.keys(map.nodes).forEach(function (id) {
@@ -313,6 +329,7 @@
       var line = centreLine(a, b, r);
       var road = {
         id: ri, from: a, to: b, kind: kind, lanes: lanes, spec: spec, weight: r.weight || 1, oneway: oneway,
+        level: r.level || 0,   // 1: on a bridge over the roads below (drawing only)
         angle: Math.atan2(b.y - a.y, b.x - a.x),
         line: line, curved: line.pts.length > 2,
         // Half the road's width: the median plus its widest side.
@@ -336,6 +353,10 @@
         node.control.lanes = node.control.lanes || 1;
       }
       node.arms.forEach(function (arm) { arm.setback = setback(node, arm, cfg); });
+      // At a merge the highway is the main road and the ramp gives way, as at a two-way stop.
+      if (node.control && node.control.type === 'merge') {
+        node.control.major = node.arms.filter(function (a) { return a.road.kind === 'highway'; }).map(function (a) { return a.toward.id; });
+      }
     });
 
     // Links: one per lane per road, from box edge to box edge. Traffic keeps right, so a road's
@@ -425,11 +446,15 @@
   //   round     a roundabout: drive the circle and leave by any other arm, into its curb lane.
   //             Lanes beyond the circle's own lane count end before it.
   function buildMovements(net, node) {
+    if (isRampNode(node)) { buildRampMovements(net, node); return; }
     var round = node.control.type === 'round';
     node.inLinks.forEach(function (from) {
       if (round && from.index >= node.control.lanes) { from.ends = true; return; }
       node.arms.forEach(function (arm) {
         if (arm === from.toArm || !arm.outLinks.length) return;
+        // Off one ramp and straight onto the next is legal on a real diamond but hardly anyone
+        // does it; left in, it would be the default "straight on" for most cars leaving the highway.
+        if (from.kind === 'ramp' && arm.road.kind === 'ramp') return;
         var rel = wrap(arm.angle - from.heading);
         var dir = Math.abs(rel) < STRAIGHT ? 'straight'
           : rel < 0 && rel > -(Math.PI - STRAIGHT) ? 'left'    // y points down: a left turn turns the heading negative
@@ -442,21 +467,48 @@
         else to = from.index === from.count - 1 ? outs[outs.length - 1] : null;
         if (!to) return;
         var turn = round ? 'round' : dir;
-        var m = {
-          id: net.movements.length, node: node, from: from, to: to, turn: turn,
-          exit: dir,           // which way the car leaves, relative to how it came in
-          path: movementPath(node, from, to, turn),
-          conflicts: [], merges: [], yieldTo: [],
-          allowed: false,
-          leadsOut: to.to.type === 'edge'   // the road it turns onto has no more junctions
-        };
-        m.len = m.path.len;
-        from.out.push(m);
-        to.in.push(m);
-        node.movements.push(m);
-        net.movements.push(m);
+        addMovement(net, node, from, to, turn, dir, movementPath(node, from, to, turn));
       });
       if (!from.out.length) from.ends = true;
+    });
+  }
+
+  function addMovement(net, node, from, to, turn, exit, path) {
+    var m = {
+      id: net.movements.length, node: node, from: from, to: to, turn: turn,
+      exit: exit,          // which way the car leaves, relative to how it came in
+      path: path,
+      conflicts: [], merges: [], yieldTo: [],
+      allowed: false,
+      leadsOut: to.to.type === 'edge'   // the road it turns onto has no more junctions
+    };
+    m.len = m.path.len;
+    from.out.push(m);
+    to.in.push(m);
+    node.movements.push(m);
+    net.movements.push(m);
+    return m;
+  }
+
+  // Ramp junctions on the highway. Every highway lane carries straight on into the same lane.
+  //   diverge  the curb lane may also take the off-ramp: a 'right' turn, so cars pick it the way
+  //            they pick a right turn (and move over to the curb lane first)
+  //   merge    the on-ramp joins the curb lane. It counts as straight on (the ramp's only way on),
+  //            and its exit is 'left'. It gives way to the curb lane (`major`, see buildYields).
+  // Each path is a smooth bend from lane end to lane start (they are nearly in line).
+  function buildRampMovements(net, node) {
+    var mainOut = node.arms.filter(function (a) { return a.road.kind === 'highway' && a.outLinks.length; })[0];
+    var rampOut = node.arms.filter(function (a) { return a.road.kind !== 'highway' && a.outLinks.length; })[0];
+    function bend(from, to) { return hermitePath(endOf(from), from.heading, startOf(to), to.startHeading); }
+    node.inLinks.forEach(function (from) {
+      var outs = mainOut.outLinks;
+      if (from.kind === 'highway') {
+        addMovement(net, node, from, outs[from.index], 'straight', 'straight', bend(from, outs[from.index]));
+        if (rampOut && from.index === from.count - 1) addMovement(net, node, from, rampOut.outLinks[0], 'right', 'right', bend(from, rampOut.outLinks[0]));
+      } else {
+        var curb = outs[outs.length - 1];
+        addMovement(net, node, from, curb, 'straight', 'left', bend(from, curb));
+      }
     });
   }
 
@@ -485,7 +537,7 @@
   // A roundabout's entries yield to the circle, which sim.js works out from the cars on it.
   function buildYields(net, node) {
     if (node.control.type === 'round') return;
-    var major = node.control.type === 'stop2' ? node.control.major || [] : null;
+    var major = node.control.type === 'stop2' || node.control.type === 'merge' ? node.control.major || [] : null;
     function isMajor(arm) { return major && major.indexOf(arm.toward.id) >= 0; }
     node.movements.forEach(function (m) {
       var seen = {};
@@ -604,7 +656,11 @@
       return straightRun[l.id];
     }
     moves.forEach(function (m) { if (m.turn === 'straight') tryAllow(m); });
-    moves.forEach(function (m) { if (m.turn === 'round' || m.leadsOut || (net.throughTurns && runsOut(m.to))) tryAllow(m); });
+    // Taking an off-ramp is always on offer: what comes after it (turns at the ramp's end) is
+    // settled by the "no way out" tier below.
+    moves.forEach(function (m) {
+      if (m.turn === 'round' || m.leadsOut || (net.throughTurns && runsOut(m.to)) || m.node.control.type === 'diverge') tryAllow(m);
+    });
     var out = waysOut();
     links.forEach(function (l) {
       // A lane whose neighbour has a way out changes lanes instead (as at a lane closing today).

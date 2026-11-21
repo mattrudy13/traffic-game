@@ -7,7 +7,7 @@ more cars waiting.
 - **Chill (default):** nothing to lose. A day passes every 6 minutes (at 1×), with a morning
   and evening rush hour and a quiet night when the map dims to lamplight and cars get headlights.
   The controls sit in three tabs: **Lights** (the place: Downtown, Main Street, Suburb,
-  Crosstown, Riverside or Old town, see Places; on Downtown, 1, 2, 4 or 6 lights; how they
+  Crosstown, Riverside, Old town or Interchange, see Places; on Downtown, 1, 2, 4 or 6 lights; how they
   decide: Smart, Timer or Green wave; and left arrows), **Traffic** (how busy the city is, and what kind of day it is:
   see Traffic kinds) and **Weather & extras** (weather, buses, send an ambulance: see below).
   Speed (1×/2×/4×) stays beside the tabs. Click any light to switch it yourself; the strategy leaves
@@ -120,7 +120,8 @@ you can watch the average-wait chart move.
   greens and lost to Timer.
 - **Timer:** 10 s each way, every light on its own random offset.
 - **Green wave:** same 10 s / 10 s cycle, but each light's east-west green starts later the further
-  east it is, by the time a car needs to drive there. Eastbound groups hit green after green.
+  east it is, by the time a car needs to drive there. Eastbound groups hit green after green. (On
+  Interchange it runs north-south instead: see Places.)
 
 How they compare: average wait over a game day (time queued off the map and give-ups included),
 averaged over 3 seeded days with arrows on (`node capacity.js`):
@@ -185,6 +186,33 @@ own control, and signs and roundabouts run themselves (only lights can be clicke
   the square north-south, with the town's only two lights where it meets the pair. Old lanes run
   out to the edges at odd angles. The day is busy from mid-morning to evening, with only small rush
   hours on top.
+- **Interchange:** a highway (two lanes each way, 1.7× street speed) crosses the map west to east
+  on a bridge over a north-south avenue. Each direction has an off-ramp before the avenue and an
+  on-ramp after it, and the ramps meet the avenue at a light on each side of the bridge: a diamond.
+  A town street crosses the avenue at a light north and south, with stop signs where side streets
+  and four cul-de-sacs join it. On a phone the highway runs top to bottom.
+
+**Highways and ramps.** Each direction of the highway is its own one-way road, drawn on a deck
+over the avenue (roads with `level: 1` are drawn after everything below them, and cars on them
+after the cars below; they only meet other roads at the junctions they name). A quarter of the
+highway's drivers leave by each off-ramp they pass; they move over to the right lane first, as for
+a right turn. Where a ramp leaves or joins, it runs alongside the highway just clear of its edge,
+then crosses to the right lane on a taper. An on-ramp car needs the right lane clear for 1.5 s; once
+it has stood at the end of the ramp for 2 s, a slow highway car lets it in, so the two zip together
+in a jam. An off-ramp holds 6 cars. When its light can't empty it, the next driver leaving stops in
+the highway's right lane and the queue grows back along it, which is what to watch for here.
+Drivers arriving behind that queue enter on the other lane, as they would on a real highway (at
+first only their own lane, and the off-ramp queue blocked new arrivals for minutes). Highway cars
+that stay on the highway never meet a light or a sign, so their trips stay out of the average wait;
+hundreds of zero-wait trips would hide the difference between the strategies. A driver who gives up
+at the highway's edge still counts, so a stalled highway costs you.
+
+Interchange's lights are all on one north-south avenue, so its Green wave runs north-south: each
+light's north-south green starts later the further south it is. Run east-west as everywhere else,
+the town lights started their cycle with the town street's green and the diamond lights with the
+avenue's, so the avenue met red after green. Its traffic is set lighter than the other places
+(highway 2 per lane, avenue 0.5, town streets 0.5): at the first weights the avenue's short stretches
+between four lights backed up off the map at slider 45 with Timer.
 
 **Curves, angles and turning on the new maps.** Riverside's and Old town's roads bend, and so do
 Suburb's quiet streets: each is a smooth curve through bend points, and its lanes follow it, so
@@ -246,6 +274,7 @@ The traffic slider's capacity mark per place (see Waiting at the edge for how it
 | Crosstown | 50 | 50 | 50 |
 | Riverside | 65 | 55 | 55 |
 | Old town | 60 | 60 | 60 |
+| Interchange | 85 | 65 | 85 |
 
 (Re-measured with `capacity.js` after Stage 1 of ROAD-NETWORK-PLAN.md. Before it, Smart overloaded
 Main Street first, at 45; now its one light carries the most. Crosstown went from 55 to 50 on every
@@ -258,7 +287,9 @@ closer to the bridge, with room for only 5 westbound cars before the bridge ligh
 that queue reached the edge and drivers gave up at slider 45. Moved east, there's room for 9.
 Curving Suburb's quiet streets raised its mark from 80 to 85 and cut its wait at slider 45 from
 9.8 s to 9.3 s: the bends make the side streets and courts about 4% longer, so the queues waiting
-at the stop signs have more room before they back up to the map edge or into a court.)
+at the stop signs have more room before they back up to the map edge or into a court. Stage 4
+added Interchange and left the other places unchanged. Timer is weakest there: with random offsets
+the diamond's two lights, 220 px apart, often send cars onto a stretch that is red at its far end.)
 
 ## Traffic kinds
 

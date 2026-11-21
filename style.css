@@ -317,10 +317,11 @@ body.mode-challenge .chill-only { display: none; }
 #trafficName { min-width: 64px; }
 body:not(.place-downtown) .downtown-only { display: none !important; }
 body.place-suburb .lights-only { display: none !important; }
-/* Four places don't fit one row on a phone: two by two. */
+/* The places don't fit one row on a phone: two by two, and an odd last one spans the row. */
 body.phone .place-seg { display: grid; grid-template-columns: 1fr 1fr; }
 body.phone .place-seg button:nth-child(odd) { margin-left: 0; }
 body.phone .place-seg button:nth-child(n+3) { margin-top: -2px; }
+body.phone .place-seg button:last-child:nth-child(odd) { grid-column: 1 / -1; }
 #trafficName.over, #cmpTrafficName.over { color: var(--danger); font-weight: 600; }
 
 /* The traffic sliders draw their own track so the part past capacity can be shaded.

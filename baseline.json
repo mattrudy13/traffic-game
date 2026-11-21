@@ -124,6 +124,21 @@
     "wait": 15.6,
     "gaveUp": 0
   },
+  "interchange smart": {
+    "trips": 1768,
+    "wait": 5.6,
+    "gaveUp": 0
+  },
+  "interchange timer": {
+    "trips": 1753,
+    "wait": 12.4,
+    "gaveUp": 0
+  },
+  "interchange wave": {
+    "trips": 1743,
+    "wait": 9.6,
+    "gaveUp": 0
+  },
   "challenge bot 0.5s": {
     "survival": 339
   },

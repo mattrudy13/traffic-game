@@ -127,9 +127,9 @@ function stopRules(net) {
   });
 }
 
-// Riverside and Old town (`turns: 'through'`): cars on a bank road can turn onto the bridge, cars on
-// Old town's main street can turn into the one-way pair, and no lane runs the wrong way up a
-// one-way street.
+// Riverside, Old town and Interchange (`turns: 'through'`): cars on a bank road can turn onto the
+// bridge, cars on Old town's main street can turn into the one-way pair, Interchange's ramps work
+// at both ends, and no lane runs the wrong way up a one-way street.
 function throughRules(name, net) {
   function allowed(from, at, to) {
     return net.movements.some(function (m) { return m.allowed && m.from.from.id === from && m.node.id === at && m.to.to.id === to; });
@@ -141,6 +141,24 @@ function throughRules(name, net) {
   if (name === 'oldtown') {
     check(allowed('mN', 'L1', 'RE'), 'oldtown: main street cannot turn into the eastbound one-way');
     check(allowed('mS', 'L2', 'RW'), 'oldtown: main street cannot turn into the westbound one-way');
+  }
+  if (name === 'interchange') {
+    // Off each off-ramp, onto the avenue both ways; from the avenue onto each on-ramp both ways.
+    check(allowed('eHW', 'DW', 'NT') && allowed('wHE', 'DE', 'ST'), 'interchange: a highway lane cannot take its off-ramp');
+    check(allowed('DW', 'NT', 'LN') && allowed('DW', 'NT', 'ST') && allowed('DE', 'ST', 'LS') && allowed('DE', 'ST', 'NT'), 'interchange: an off-ramp cannot turn onto the avenue');
+    check(allowed('LN', 'NT', 'MW') && allowed('ST', 'NT', 'MW') && allowed('LS', 'ST', 'ME') && allowed('NT', 'ST', 'ME'), 'interchange: the avenue cannot turn onto an on-ramp');
+    check(allowed('NT', 'MW', 'wHW') && allowed('ST', 'ME', 'eHE'), 'interchange: an on-ramp cannot join the highway');
+    // Nobody goes straight from an off-ramp onto the on-ramp across the avenue.
+    check(!net.movements.some(function (m) { return m.from.kind === 'ramp' && m.to.kind === 'ramp'; }), 'interchange: a ramp leads straight onto a ramp');
+    // Only the curb lane leaves by the off-ramp, and an on-ramp joins the curb lane, giving way to it.
+    net.movements.forEach(function (m) {
+      var t = m.node.control.type;
+      if (t === 'diverge' && m.to.kind === 'ramp') check(m.from.position === 'curb', 'interchange: an inner lane takes the off-ramp');
+      if (t === 'merge' && m.from.kind === 'ramp') {
+        check(m.to.position === 'curb', 'interchange: an on-ramp joins the inner lane');
+        check(m.yieldTo.some(function (y) { return y.kind === 'cross'; }), 'interchange: an on-ramp gives way to nobody');
+      }
+    });
   }
   net.roads.forEach(function (r) {
     if (!r.oneway) return;
@@ -183,7 +201,7 @@ Sim.PLACES.forEach(function (place) {
     if (place === 'downtown') lightRules(name, net);
     if (place === 'main') stopRules(net);
     if (place === 'suburb') suburbRules(net);
-    if (place === 'riverside' || place === 'oldtown') throughRules(name, net);
+    if (place === 'riverside' || place === 'oldtown' || place === 'interchange') throughRules(name, net);
   });
 });
 [0, 35, 80, 140].forEach(function (t) {
