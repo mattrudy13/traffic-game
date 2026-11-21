@@ -1,6 +1,6 @@
 # Road network plan
 
-Status: Stages 0, 1 and 2 done (2026-11-19); Stage 3 done (2026-11-21). Stage 1 was built on branch `stage-1-network`: sim.js
+Status: all four stages done: 0, 1 and 2 (2026-11-19), 3 and 4 (2026-11-21). Stage 1 was built on branch `stage-1-network`: sim.js
 drives on the network from `maps.js` and `network.js` (1a) and game.js draws from it (1b); all
 tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see "Stage 1a result"
 and "Stage 1b result" below). The engine before it was removed once `network-test.js` had a
@@ -8,7 +8,8 @@ snapshot (`network-baseline.json`) recorded while the network still matched it. 
 `stage-2-suburb`) gave Suburb T-junctions and cul-de-sacs; one-way streets moved to Stage 3 (see
 "Stage 2 result"). Stage 3 (branch `stage-3-curves`) added curved and angled roads, one-way
 streets, Riverside and Old town; branch `stage-3-suburb-curves` curved Suburb's quiet streets
-(see "Stage 3 result"). Next: Stage 4. Replaces "every road is a straight line from one edge of
+(see "Stage 3 result"). Stage 4 (branch `stage-4-interchange`) added the highway, ramps, bridge
+levels and Interchange (see "Stage 4 result"). Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -30,7 +31,9 @@ ends, one-way streets, curves, diagonals and a highway with ramps.
 | Riverside layout (Stage 3) | "Meander" from the mockups: the river winds across the middle, a curving bank road each side, one avenue bridge with a light at each end, diagonal streets to the edges |
 | Old town layout (Stage 3) | "Split round the square": the west-east road splits into a one-way pair (one lane each) round the market square between two small roundabouts; a short main street with the only two lights crosses it |
 | Curved Suburb (Stage 3) | "Gentle bends, park in the middle" from the mockups: same junctions and connections, through roads and roundabout straight, quiet streets and courts bend, a park with pond and trees beside the roundabout; Suburb keeps the strict turning rule |
-| Place picker | Six buttons, same as before: one row on desktop, three rows of two on a phone |
+| Place picker | Six buttons, same as before: one row on desktop, three rows of two on a phone. Seven with Interchange: still one row on desktop; on a phone the seventh spans the last row |
+| Interchange layout (Stage 4) | Chosen without a mockup round, on the recommended answers: a diamond interchange; a highway straight across east-west, two lanes each way, on a bridge over a north-south avenue; a town street with a light where it crosses the avenue north and south of the highway, stop signs elsewhere; concrete-grey deck with a median barrier, railings and a shadow |
+| Highway stats (Stage 4) | Trips that stay on the highway are left out of the average wait; give-ups at the highway's edge and its "waiting to enter" count as anywhere else. A full off-ramp backs its queue onto the highway's right lane (the failure the player watches for) |
 | Old town's day | Busy from mid-morning to evening, small rush hours |
 | Turning on the new maps | Riverside and Old town (`turns: 'through'`) let cars turn onto any road that runs straight on to the edge, so bank roads feed the bridge and the main street feeds the one-way pair. The four older places keep the stricter rule and their numbers |
 
@@ -247,6 +250,31 @@ Every other place and the challenge are unchanged; only Suburb moved in both sna
 **Stage 4: highway, bridges and ramps (large).**
 - Bridge levels, merge and diverge nodes, highway speeds, and ramp meters left out unless needed.
 - Map: Interchange.
+
+**Stage 4 result (2026-11-21).** Two new road kinds in network.js: `highway` (1.7× street speed)
+and `ramp`. Each highway direction is a one-way two-lane road, so its ramps can attach to it. Two
+new junction types: `diverge` (the curb lane may also take the off-ramp, as a right turn) and
+`merge` (the on-ramp joins the curb lane, giving way to it like a side street at a two-way stop,
+with a 1.5 s gap and a zipper after 2 s). A ramp junction's box is a fixed 40 px of highway and
+90 px of ramp; the ramp runs alongside just clear of the highway's edge, and cars cross on a taper.
+Taking an off-ramp is always allowed, and nobody goes straight from an off-ramp onto the on-ramp
+across the avenue. `level: 1` is drawing only: roads cross freely unless they share a node, and
+game.js draws the deck and its cars over everything below. No ramp meters were needed.
+Things that turned up:
+- A ramp that met the highway at its middle left a waiting on-ramp car inside the right lane (the
+  overlap test, which now skips pairs on different levels, caught it).
+- Cars waiting for the off-ramp filled the right lane, and new arrivals could only enter their own
+  lane, so the queue blocked the highway's entry for minutes. Highway arrivals now take the other
+  lane when theirs is blocked.
+- Green wave ran east-west, so on Interchange's one north-south avenue the town lights and the
+  diamond lights started their cycles on different roads. Maps can now set `wave: 'ns'`.
+- At first weights the avenue's short stretches between four lights backed up off the map with
+  Timer at slider 45. Tried and dropped: moving the town streets, a tighter diamond, stop signs in
+  place of the town lights, and letting Smart count cars queued off the map. Lighter traffic fixed
+  it: highway 2 per lane, avenue 0.5, town streets 0.5.
+Numbers at slider 45 (Smart / Timer / Wave): waits 5.6 / 12.4 / 9.6 s, no give-ups; capacity marks
+85 / 65 / 85. Every older place and the challenge are unchanged (baseline and network snapshot
+match).
 
 ## Risks
 
