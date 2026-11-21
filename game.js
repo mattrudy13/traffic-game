@@ -18,7 +18,8 @@
     sideA: '#24539a', sideAInk: '#f5f1e8', sideB: '#c47a12', sideBInk: '#22252b',
     stadium: '#e9e1cf', field: '#d6e2c6', closed: '#f5a524', cone: '#ff6a00',
     rainInk: '#3460a0', snowEdge: '#ffffff', paint: '#f5f1e8', sign: '#c8323a', island: '#a9c48f',
-    water: '#a9cfe0', bank: '#8db6c9', railing: '#f5f1e8', square: '#e9e1cf', squareEdge: '#c9bea8'
+    water: '#a9cfe0', bank: '#8db6c9', railing: '#f5f1e8', square: '#e9e1cf', squareEdge: '#c9bea8',
+    park: '#cfe2b8', parkEdge: '#a9c48f', tree: '#86ad6c'
   };
   var NIGHT = {
     map: '#3b362e', grid: '#453f36', road: '#1c1b19', dash: '#5a554c', car: '#f4ead6',
@@ -28,7 +29,8 @@
     sideA: '#8fb3ea', sideAInk: '#2b2722', sideB: '#ffb547', sideBInk: '#2b2722',
     stadium: '#4a443a', field: '#3f4a38', closed: '#c48a35', cone: '#ff8a3d',
     rainInk: '#aac8f0', snowEdge: '#e8e4dc', paint: '#d8d0c0', sign: '#e5484d', island: '#4f6143',
-    water: '#2f4c5a', bank: '#3b5d6c', railing: '#d8d0c0', square: '#4a443a', squareEdge: '#5d564a'
+    water: '#2f4c5a', bank: '#3b5d6c', railing: '#d8d0c0', square: '#4a443a', squareEdge: '#5d564a',
+    park: '#3d4834', parkEdge: '#4f6143', tree: '#58744a'
   };
   // Everything outside the map, plus the bits drawn on it that use the strip's ink and paper.
   var FLIP = { paper: 1, ink: 1, muted: 1, track: 1, rush: 1, spark: 1, danger: 1, sideA: 1, sideAInk: 1,
@@ -71,7 +73,7 @@
   var PLACE_NOTES = {
     downtown: '',
     main: 'Main Street: side streets stop and wait for a gap in the avenue; one light at the busiest crossing. The back street has all-way stops.',
-    suburb: 'Suburb: no lights. Side streets and cul-de-sacs stop for the through roads, which meet at a roundabout. Mornings bring a school run.',
+    suburb: 'Suburb: no lights. Winding side streets and cul-de-sacs stop for the through roads, which meet at a roundabout by the park. Mornings bring a school run.',
     crosstown: 'Crosstown: two avenues meet at a roundabout, each narrowing to one lane on the way in. Lights on the side streets.',
     riverside: 'Riverside: one bridge carries every trip across the river. Lights at both ends and on the bank roads.',
     oldtown: 'Old town: one-way streets round the square, small roundabouts, and lights only on the main street. Busy all day.'
@@ -548,8 +550,87 @@
         ctx.strokeStyle = palette.squareEdge;
         ctx.stroke();
         ctx.setLineDash([]);
+      } else if (s.type === 'park') {
+        drawPark(s);
       }
     });
+  }
+
+  // Grass inside the park's outline, a pond, and trees scattered round it. The trees are placed
+  // once per park, from a fixed hash rather than Math.random, so they don't jump between frames or
+  // differ between the two compare maps.
+  function drawPark(s) {
+    var pts = s.pts, pond = s.pond;
+    ctx.beginPath();
+    closedSmoothLine(pts);
+    ctx.fillStyle = palette.park;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = palette.parkEdge;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(pond.x, pond.y, pond.rx, pond.ry, pond.angle * Math.PI / 180, 0, Math.PI * 2);
+    ctx.fillStyle = palette.water;
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = palette.bank;
+    ctx.stroke();
+    if (!s.trees) s.trees = parkTrees(s);
+    ctx.fillStyle = palette.tree;
+    s.trees.forEach(function (t) {
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // A smooth closed loop through points (Catmull-Rom, wrapping round), added to the current path.
+  function closedSmoothLine(pts) {
+    var n = pts.length;
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 0; i < n; i++) {
+      var p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      ctx.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6,
+        p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]);
+    }
+    ctx.closePath();
+  }
+
+  // Tree spots on a loose grid inside the outline: kept clear of its edge and of the pond.
+  function parkTrees(s) {
+    var outline = [], n = s.pts.length, pond = s.pond, trees = [];
+    for (var i = 0; i < n; i++) {
+      var p0 = s.pts[(i + n - 1) % n], p1 = s.pts[i], p2 = s.pts[(i + 1) % n], p3 = s.pts[(i + 2) % n];
+      for (var k = 0; k < 16; k++) {
+        var t = k / 16, t2 = t * t, t3 = t2 * t;
+        outline.push([0, 1].map(function (a) {
+          return 0.5 * (2 * p1[a] + (p2[a] - p0[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t2 + (3 * p1[a] - p0[a] - 3 * p2[a] + p3[a]) * t3);
+        }));
+      }
+    }
+    function inside(x, y) {
+      var c = false;
+      for (var a = 0, b = outline.length - 1; a < outline.length; b = a++) {
+        var pa = outline[a], pb = outline[b];
+        if ((pa[1] > y) !== (pb[1] > y) && x < (pb[0] - pa[0]) * (y - pa[1]) / (pb[1] - pa[1]) + pa[0]) c = !c;
+      }
+      return c;
+    }
+    function hash(x, y) { var h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return h - Math.floor(h); }
+    var xs = outline.map(function (p) { return p[0]; }), ys = outline.map(function (p) { return p[1]; });
+    var rot = -pond.angle * Math.PI / 180;
+    for (var x = Math.min.apply(null, xs) + 14; x < Math.max.apply(null, xs); x += 26) {
+      for (var y = Math.min.apply(null, ys) + 14; y < Math.max.apply(null, ys); y += 24) {
+        var h = hash(x, y), tx = x + (h - 0.5) * 16, ty = y + (hash(y, x) - 0.5) * 14;
+        if (h > 0.62 || !inside(tx, ty)) continue;
+        if (outline.some(function (p) { return Math.hypot(p[0] - tx, p[1] - ty) < 18; })) continue;
+        var dx = tx - pond.x, dy = ty - pond.y;
+        var ex = dx * Math.cos(rot) - dy * Math.sin(rot), ey = dx * Math.sin(rot) + dy * Math.cos(rot);
+        if (Math.pow(ex / (pond.rx + 18), 2) + Math.pow(ey / (pond.ry + 18), 2) < 1) continue;
+        trees.push({ x: tx, y: ty, r: 8 + h * 7 });
+      }
+    }
+    return trees;
   }
 
   // A smooth line through points (Catmull-Rom, as roads use), added to the current path.
@@ -1218,7 +1299,7 @@
   // so its strategy doesn't matter; its quieter school-run day carries more before it overloads.
   var PLACE_CAPACITY = {
     main: { smart: 75, timer: 75, wave: 80 },
-    suburb: { smart: 80, timer: 80, wave: 80 },
+    suburb: { smart: 85, timer: 85, wave: 85 },
     riverside: { smart: 65, timer: 55, wave: 55 },
     oldtown: { smart: 60, timer: 60, wave: 60 },
     crosstown: { smart: 50, timer: 50, wave: 50 }

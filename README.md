@@ -154,10 +154,10 @@ own control, and signs and roundabouts run themselves (only lights can be clicke
 - **Main Street:** one avenue with four side streets. The side streets have two-way stops onto it,
   except a light at the busiest crossing; the quiet back street has all-way stops. Side streets
   carry half the avenue's traffic per lane.
-- **Suburb:** no lights, and the first map that isn't a grid. Two through streets meet at a
-  roundabout. Quiet streets branch off them at T-junctions, where the side road stops, and six
-  cul-de-sacs (round ends) branch off the quiet streets; the one T-junction between two cul-de-sacs
-  is an all-way stop. Three quiet streets reach the map edge and carry half a through street's
+- **Suburb:** no lights, and the first map that isn't a grid. Two straight through streets meet at
+  a roundabout. Quiet streets wind off them at T-junctions, where the side road stops, and six
+  cul-de-sacs (round ends) curl off the quiet streets; the one T-junction between two cul-de-sacs
+  is an all-way stop. A park with a pond fills the block beside the roundabout (scenery only). Three quiet streets reach the map edge and carry half a through street's
   traffic there. The day has a school run (a sharp morning peak and a smaller one mid-afternoon).
   The light controls hide here, and Suburb isn't offered in compare mode (both maps would be the same).
 
@@ -186,10 +186,12 @@ own control, and signs and roundabouts run themselves (only lights can be clicke
   out to the edges at odd angles. The day is busy from mid-morning to evening, with only small rush
   hours on top.
 
-**Curves, angles and turning on the new maps.** Riverside's and Old town's roads bend: each is a
-smooth curve through bend points, and its lanes follow it, so cars steer round the bends. Junctions
+**Curves, angles and turning on the new maps.** Riverside's and Old town's roads bend, and so do
+Suburb's quiet streets: each is a smooth curve through bend points, and its lanes follow it, so
+cars steer round the bends at full speed. Each street leaves its junction close to square, since a
+road met at a slant makes the junction's box reach further along both roads. Junctions
 work out their boxes, turn paths and phases from the angles the roads meet at, so a T-junction at
-70° needs nothing special. Cars on these two maps may also turn onto any road that runs straight on
+70° needs nothing special. Cars on Riverside and Old town may also turn onto any road that runs straight on
 to the map edge, even past more junctions (across a roundabout, any way off it counts). Everywhere
 else a car only turns onto a road whose next junction is the edge (see Turning). Without that,
 nobody on a bank road could turn onto the bridge, since past it comes the other bridge light, and
@@ -240,7 +242,7 @@ The traffic slider's capacity mark per place (see Waiting at the edge for how it
 | | Smart | Timer | Green wave |
 |---|---|---|---|
 | Main Street | 75 | 75 | 80 |
-| Suburb | 80 | 80 | 80 |
+| Suburb | 85 | 85 | 85 |
 | Crosstown | 50 | 50 | 50 |
 | Riverside | 65 | 55 | 55 |
 | Old town | 60 | 60 | 60 |
@@ -253,7 +255,10 @@ changes above; the new Suburb kept the old one's 80, though its average wait at 
 9.8 s against the grid's 6.7 s, since a trip from home passes more stop signs. Stage 3 added
 Riverside and Old town and left the other places unchanged. Riverside's east stop sign first sat
 closer to the bridge, with room for only 5 westbound cars before the bridge light; on busy evenings
-that queue reached the edge and drivers gave up at slider 45. Moved east, there's room for 9.)
+that queue reached the edge and drivers gave up at slider 45. Moved east, there's room for 9.
+Curving Suburb's quiet streets raised its mark from 80 to 85 and cut its wait at slider 45 from
+9.8 s to 9.3 s: the bends make the side streets and courts about 4% longer, so the queues waiting
+at the stop signs have more room before they back up to the map edge or into a court.)
 
 ## Traffic kinds
 

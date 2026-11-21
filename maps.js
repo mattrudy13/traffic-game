@@ -20,7 +20,8 @@
  *              one whose next junction is the edge (see network.js, buildDistances)
  *   scenery    things drawn under the roads: { type: 'river', pts, width }, { type: 'bridge',
  *              from, to, half } (railings either side of a road over water), { type: 'square',
- *              x, y, rx, ry } (a paved square)
+ *              x, y, rx, ry } (a paved square), { type: 'park', pts, pond: { x, y, rx, ry,
+ *              angle } } (grass inside a smooth closed outline, a pond, and trees game.js scatters)
  *
  * Downtown, Main Street and Crosstown are grids of straight roads running edge to edge, written as
  * grid specs that `gridMap` turns into nodes and roads. Suburb, Riverside and Old town are
@@ -73,42 +74,48 @@
 
   function lightsEverywhere() { return { type: 'light' }; }
 
-  // Suburb, hand-written ("streets and courts", chosen from the Stage 2 mockups). Two through roads
-  // cross at a roundabout. Quiet streets branch off them at T-junctions, where the side road stops,
-  // and short courts (cul-de-sacs, type `deadend`) branch off the quiet streets. Cars start in the
-  // courts and drive out; nobody drives in, so a court's road only has the lane leading out
-  // (lanes [1, 0], from the court to the junction). It is still drawn full width, like any street.
-  // Quiet streets carry half the traffic of the through roads at their map edge (weight 0.5).
+  // Suburb, hand-written ("streets and courts", chosen from the Stage 2 mockups; curved in Stage 3,
+  // "gentle bends, park in the middle"). Two straight through roads cross at a roundabout. Quiet
+  // streets wind off them at T-junctions, where the side road stops, and short courts (cul-de-sacs,
+  // type `deadend`) curl off the quiet streets. Cars start in the courts and drive out; nobody
+  // drives in, so a court's road only has the lane leading out (lanes [1, 0], from the court to the
+  // junction). It is still drawn full width, like any street. Quiet streets carry half the traffic
+  // of the through roads at their map edge (weight 0.5). A park with a pond fills the block between
+  // the north street and the west road; it is only scenery.
+  // Every bend point sits so a street leaves its junction close to square: met at a slant, a
+  // junction's box has to reach further along each road to clear the other one.
   function suburbMap() {
-    function edge(x, y) { return { x: x, y: y, type: 'edge' }; }
-    function stop2(x, y, a, b) { return { x: x, y: y, control: { type: 'stop2', major: [a, b] } }; }
     function court(x, y) { return { x: x, y: y, type: 'deadend' }; }
     var nodes = {
       n666: edge(666, 0), s666: edge(666, 680), w449: edge(0, 449), e449: edge(1280, 449),
-      w170: edge(0, 170), e300: edge(1280, 300), s330: edge(330, 680),
+      w155: edge(0, 155), e295: edge(1280, 295), s300: edge(300, 680),
       R: { x: 666, y: 449, control: { type: 'round' } },
       // On the north-south through road: the north street comes in from the west, the east street from the east.
       M1: stop2(666, 170, 'n666', 'M2'), M2: stop2(666, 300, 'M1', 'R'),
       // Along the north street, and the east street.
-      P1: stop2(230, 170, 'w170', 'P2'), P2: stop2(470, 170, 'P1', 'M1'), Q1: stop2(870, 300, 'M2', 'e300'),
+      P1: stop2(240, 192, 'w155', 'P2'), P2: stop2(470, 208, 'P1', 'M1'), Q1: stop2(870, 312, 'M2', 'e295'),
       // On the east-west through road: a street south to the edge, and a spine into the south-east courts.
-      S1: stop2(330, 449, 'w449', 'R'), S2: stop2(330, 575, 'S1', 's330'),
-      S3: stop2(960, 449, 'R', 'e449'), S4: { x: 960, y: 575, control: { type: 'stop4' } },
-      C1: court(230, 330), C2: court(470, 50), C3: court(870, 140), C5: court(520, 575), C6: court(790, 575), C7: court(1140, 575)
+      S1: stop2(330, 449, 'w449', 'R'), S2: stop2(312, 575, 'S1', 's300'),
+      S3: stop2(960, 449, 'R', 'e449'), S4: { x: 945, y: 578, control: { type: 'stop4' } },
+      C1: court(212, 345), C2: court(440, 62), C3: court(925, 150), C5: court(515, 592), C6: court(780, 598), C7: court(1125, 556)
     };
-    function road(from, to, weight, lanes) { return { from: from, to: to, kind: 'street', lanes: lanes || [1, 1], weight: weight || 1 }; }
-    function courtRoad(from, to) { return road(from, to, 0.5, [1, 0]); }
-    var roads = [
-      road('n666', 'M1'), road('M1', 'M2'), road('M2', 'R'), road('R', 's666'),
-      road('w449', 'S1'), road('S1', 'R'), road('R', 'S3'), road('S3', 'e449'),
-      road('w170', 'P1', 0.5), road('P1', 'P2', 0.5), road('P2', 'M1', 0.5),
-      road('M2', 'Q1', 0.5), road('Q1', 'e300', 0.5),
-      road('S1', 'S2', 0.5), road('S2', 's330', 0.5),
-      road('S3', 'S4', 0.5),
-      courtRoad('C1', 'P1'), courtRoad('C2', 'P2'), courtRoad('C3', 'Q1'),
-      courtRoad('C5', 'S2'), courtRoad('C6', 'S4'), courtRoad('C7', 'S4')
-    ];
-    return { nodes: nodes, roads: roads };
+    var quiet = { weight: 0.5 }, out = { weight: 0.5, lanes: [1, 0] };
+    var roads = [].concat(
+      chain(nodes, ['n666', 'M1', 'M2', 'R', 's666']),
+      chain(nodes, ['w449', 'S1', 'R', 'S3', 'e449']),
+      chain(nodes, ['w155', [115, 168], 'P1', [355, 218], 'P2', [585, 186], 'M1'], quiet),
+      chain(nodes, ['M2', [765, 318], 'Q1', [1000, 290], [1150, 305], 'e295'], quiet),
+      chain(nodes, ['S1', [336, 512], 'S2', [290, 630], 's300'], quiet),
+      chain(nodes, ['S3', [958, 515], 'S4'], quiet),
+      chain(nodes, ['C1', [248, 280], 'P1'], out), chain(nodes, ['C2', [478, 125], 'P2'], out),
+      chain(nodes, ['C3', [884, 225], 'Q1'], out), chain(nodes, ['C5', [420, 608], 'S2'], out),
+      chain(nodes, ['C6', [862, 578], 'S4'], out), chain(nodes, ['C7', [1035, 578], 'S4'], out)
+    );
+    return {
+      nodes: nodes, roads: roads,
+      scenery: [{ type: 'park', pts: [[335, 305], [420, 268], [545, 272], [605, 318], [585, 390], [450, 400], [345, 378]],
+        pond: { x: 492, y: 334, rx: 62, ry: 30, angle: -8 } }]
+    };
   }
 
   // One road drawn as a single line through several junctions: `pts` are node ids and [x, y] bend
