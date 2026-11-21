@@ -1,13 +1,14 @@
 # Road network plan
 
-Status: Stages 0, 1 and 2 done (2026-11-19); Stage 3 done except Suburb's curved streets (2026-11-20). Stage 1 was built on branch `stage-1-network`: sim.js
+Status: Stages 0, 1 and 2 done (2026-11-19); Stage 3 done (2026-11-21). Stage 1 was built on branch `stage-1-network`: sim.js
 drives on the network from `maps.js` and `network.js` (1a) and game.js draws from it (1b); all
 tests pass, `baseline.json` is re-saved and the capacity marks re-measured (see "Stage 1a result"
 and "Stage 1b result" below). The engine before it was removed once `network-test.js` had a
 snapshot (`network-baseline.json`) recorded while the network still matched it. Stage 2 (branch
 `stage-2-suburb`) gave Suburb T-junctions and cul-de-sacs; one-way streets moved to Stage 3 (see
 "Stage 2 result"). Stage 3 (branch `stage-3-curves`) added curved and angled roads, one-way
-streets, Riverside and Old town (see "Stage 3 result"). Next: Suburb's curved streets, then Stage 4. Replaces "every road is a straight line from one edge of
+streets, Riverside and Old town; branch `stage-3-suburb-curves` curved Suburb's quiet streets
+(see "Stage 3 result"). Next: Stage 4. Replaces "every road is a straight line from one edge of
 the map to the other" with a real network of nodes and roads, so maps can have T-junctions, dead
 ends, one-way streets, curves, diagonals and a highway with ramps.
 
@@ -28,6 +29,7 @@ ends, one-way streets, curves, diagonals and a highway with ramps.
 | Cul-de-sac drivers | Count like everyone else in the average wait, "waiting to enter" and give-ups |
 | Riverside layout (Stage 3) | "Meander" from the mockups: the river winds across the middle, a curving bank road each side, one avenue bridge with a light at each end, diagonal streets to the edges |
 | Old town layout (Stage 3) | "Split round the square": the west-east road splits into a one-way pair (one lane each) round the market square between two small roundabouts; a short main street with the only two lights crosses it |
+| Curved Suburb (Stage 3) | "Gentle bends, park in the middle" from the mockups: same junctions and connections, through roads and roundabout straight, quiet streets and courts bend, a park with pond and trees beside the roundabout; Suburb keeps the strict turning rule |
 | Place picker | Six buttons, same as before: one row on desktop, three rows of two on a phone |
 | Old town's day | Busy from mid-morning to evening, small rush hours |
 | Turning on the new maps | Riverside and Old town (`turns: 'through'`) let cars turn onto any road that runs straight on to the edge, so bank roads feed the bridge and the main street feeds the one-way pair. The four older places keep the stricter rule and their numbers |
@@ -209,8 +211,8 @@ passes more stop signs); capacity mark 80, unchanged. Main Street improved: wait
 - Curved and angled road paths, lane changes on curves, and junction boxes at odd angles.
 - Maps: Riverside, Old town, and Suburb's curved streets.
 
-**Stage 3 result (2026-11-20).** Done except Suburb's curved streets, left for a short round of
-its own. In network.js a road may bend through `via` points (a Catmull-Rom curve, `before`/`after`
+**Stage 3 result (2026-11-20).** Suburb's curved streets came after, in a short round of
+their own (see "Curved Suburb" below). In network.js a road may bend through `via` points (a Catmull-Rom curve, `before`/`after`
 carrying it smoothly through junctions; `chain` in maps.js fills these in), its lanes are offset
 copies of the curve, and each link has a start and an end heading. Arm angles, box setbacks, turn
 paths, groups and phases already worked from angles, so odd-angle junctions needed nothing more;
@@ -229,6 +231,18 @@ bridge light, evening queues reached the map edge and drivers gave up at slider 
 Numbers at slider 45 (Smart / Timer / Wave): Riverside waits 9.9 / 16.9 / 15.7 s, capacity marks
 65 / 55 / 55; Old town waits 11.6 / 14.2 / 15.6 s, capacity marks 60 / 60 / 60. Every older place
 and the challenge are unchanged (baseline and network snapshot match).
+
+**Curved Suburb (2026-11-21).** The last Stage 3 piece, "gentle bends, park in the middle" from the
+mockups. Same junctions, stop signs, courts and ways in from the edge; the through roads and the
+roundabout stay straight, and the quiet streets and courts bend through `chain` bend points. Every
+movement and every allowed turn came out the same as before, so Suburb keeps the strict turning
+rule. The first try put the south-east courts on a shallow V into their all-way stop, which
+pushed that junction's box out to 101 px; bending both courts in level with the junction brought
+it back to 34 px (every Suburb box is now 29 to 38 px, the roundabout 52). A park with a pond and
+trees (scenery type `park`) fills the block beside the roundabout; game.js scatters the trees from
+a fixed hash so they never move. Suburb's wait at slider 45 went from 9.8 s to 9.3 s and its
+capacity mark from 80 to 85: the streets are about 4% longer, so stop-sign queues have more room.
+Every other place and the challenge are unchanged; only Suburb moved in both snapshots.
 
 **Stage 4: highway, bridges and ramps (large).**
 - Bridge levels, merge and diverge nodes, highway speeds, and ramp meters left out unless needed.
